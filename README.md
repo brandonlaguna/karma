@@ -13,3 +13,6 @@ El único paso manual extra, y no es de despliegue sino de contenido: cargar la 
 
 Ejecutar migracion
 - docker exec -it ai_mcp_server pnpm run migrate
+- docker compose up -d --build mcp-server
+- docker exec -it ai_mcp_server pnpm run migrate
+- docker exec -it ai_mcp_server pnpm run seed src/db/seed.colombia.sql
