@@ -10,3 +10,6 @@ levantas todo
 
 El único paso manual extra, y no es de despliegue sino de contenido: cargar la base de conocimiento con
 - ´docker exec -it ai_mcp_server pnpm run ingest´
+
+Ejecutar migracion
+- docker compose up -d --build mcp-server ai-backend
