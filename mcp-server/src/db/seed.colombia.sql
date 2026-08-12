@@ -24,7 +24,13 @@ INSERT INTO teams (name) VALUES
   ('Infraestructura Nevados-Olaya'),
   ('Infraestructura Medellín'),
   ('Desarrollo')
-ON CONFLICT (name) DO NOTHING;
+-- FIX: el schema (ver schema.sql, "Corrección de diseño 2026-08-05")
+-- cambió la unicidad de teams de "name" solo a "(name, country_id)" --
+-- cada país necesita su propia fila (CO-REDES vs PE-REDES). Este INSERT
+-- inserta sin country_id todavía (se asigna después con el UPDATE más
+-- abajo), así que el conflicto real es contra (name, country_id) con
+-- country_id NULL en este punto -- coincide con idx_teams_name_country_unique.
+ON CONFLICT (name, country_id) DO NOTHING;
 
 INSERT INTO contacts (name, email, phone) VALUES
   ('Soporte Redes', 'redes.Colombia@atento.com', '+57 316 463 82 57

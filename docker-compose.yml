@@ -141,6 +141,11 @@ services:
       CONVERSATION_TTL_MINUTES: ${CONVERSATION_TTL_MINUTES}
       MAX_CONVERSATION_TURNS: ${MAX_CONVERSATION_TURNS}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE}
+      # Modelo de chat por defecto -- antes estaba hardcodeado en el
+      # código ("qwen3:8b"), ahora configurable por servidor: cada
+      # deploy puede necesitar un modelo distinto según la RAM
+      # disponible para Ollama en ese host (ver LOCAL_MODEL en .env).
+      LOCAL_MODEL: ${LOCAL_MODEL}
 
       POSTGRES_HOST: postgresql
       POSTGRES_PORT: ${POSTGRES_PORT}

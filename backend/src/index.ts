@@ -197,7 +197,13 @@ app.post("/chat", async (req, res) => {
 
     const {
       message,
-      model = "qwen3:8b",
+      // FIX: antes hardcodeado -- ahora lee LOCAL_MODEL del entorno
+      // (ver docker-compose.yml), así cada servidor puede usar un
+      // modelo acorde a su RAM disponible sin tocar código. Ej. este
+      // mismo default "qwen3:8b" hace OOM en un host con ~4GB
+      // disponibles para Ollama en CPU-only -- ahí conviene algo como
+      // "qwen3:4b" vía LOCAL_MODEL en el .env de ese server.
+      model = process.env.LOCAL_MODEL || "qwen3:8b",
       systemPrompt = GENERAL_ASSISTANT_SYSTEM_PROMPT,
       // Qwen3 soporta un modo "thinking" (razonamiento largo antes de
       // responder) que dispara la latencia para casos de uso donde no
