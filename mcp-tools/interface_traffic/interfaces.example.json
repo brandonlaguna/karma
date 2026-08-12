@@ -1,0 +1,18 @@
+[
+  {
+    "label": "Bogota-Enlace-Principal-01",
+    "eeProbeID": "REEMPLAZAR-con-el-probeID-del-dispositivo",
+    "interfaceName": "IF-REEMPLAZAR-source-REEMPLAZAR-elementid",
+    "graphName": "traffic",
+    "graphFilterType": null,
+    "isFluidic": null
+  },
+  {
+    "label": "Bogota-Enlace-Backup-01",
+    "eeProbeID": "REEMPLAZAR-con-el-probeID-del-dispositivo",
+    "interfaceName": "IF-REEMPLAZAR-source-REEMPLAZAR-elementid",
+    "graphName": "traffic",
+    "graphFilterType": null,
+    "isFluidic": null
+  }
+]

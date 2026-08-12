@@ -1,0 +1,244 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_redis
+    restart: always
+    env_file:
+      - .env
+    # 6380 externo (no 6379) para no chocar con el Redis que ya usa
+    # Epistech en el mismo host. Internamente sigue en 6379 (net_container).
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ai_redis_commander
+    restart: always
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    env_file:
+      - .env
+    ports:
+      - "8082:8081"
+    depends_on:
+      - redis
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  postgresql:
+    image: postgres:16-alpine
+    container_name: ai_postgresql
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # 5433 externo (no 5432) para no chocar con algún otro Postgres que
+    # ya corra en el mismo host -- Epistech ya usa Postgres para Zabbix
+    # y OpManager en puertos propios.
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ai_qdrant
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    # Sin healthcheck: la imagen oficial (debian:12-slim) no trae wget ni
+    # curl, así que cualquier CMD-based check siempre falla y marca
+    # "unhealthy" aunque Qdrant esté sirviendo bien. Nada en este compose
+    # depende de su estado de salud (depends_on sin condition:), así que
+    # no afecta el arranque de los demás servicios.
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ai_open_webui
+    restart: always
+    ports:
+      - "3010:8080"
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      ENABLE_SIGNUP: "true"
+    env_file:
+      - .env
+    volumes:
+      - open_webui_data:/app/backend/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+      - redis
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  ai-backend:
+    build:
+      context: ./backend
+    container_name: ai_backend
+    restart: always
+    command: pnpm run dev
+    ports:
+      - "4011:4000"
+    environment:
+      NODE_ENV: development
+      PORT: ${BACKEND_PORT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      MCP_SERVER_URL: ${MCP_SERVER_URL}
+      MAX_TOOL_ITERATIONS: ${MAX_TOOL_ITERATIONS}
+      TOOLS_CACHE_TTL_MINUTES: ${TOOLS_CACHE_TTL_MINUTES}
+      CONVERSATION_TTL_MINUTES: ${CONVERSATION_TTL_MINUTES}
+      MAX_CONVERSATION_TURNS: ${MAX_CONVERSATION_TURNS}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE}
+
+      POSTGRES_HOST: postgresql
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT}
+
+      QDRANT_URL: ${QDRANT_URL}
+      CI: "true"
+    env_file:
+      - .env
+    # volumes:
+      # - ./backend:/app
+      # - backend_node_modules:/app/node_modules
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    depends_on:
+      - redis
+      - qdrant
+      - postgresql
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+    container_name: ai_mcp_server
+    restart: always
+    command: pnpm run dev
+    ports:
+      - "4100:4100"
+    environment:
+      NODE_ENV: development
+
+      PORT: ${MCP_PORT}
+
+      POSTGRES_HOST: postgresql
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT}
+
+      QDRANT_URL: ${QDRANT_URL}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EPISTECH_BACKEND_URL: ${EPISTECH_BACKEND_URL}
+      CI: "true"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # volumes:
+      # - ./mcp-server:/app
+      # - mcp_node_modules:/app/node_modules
+
+    depends_on:
+      - redis
+      - qdrant
+      - postgresql
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4100/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - net_container
+
+volumes:
+  redis_data:
+  postgres_data:
+  qdrant_data:
+  open_webui_data:
+  backend_node_modules:
+  mcp_node_modules:
+
+networks:
+  net_container:
+    external: true

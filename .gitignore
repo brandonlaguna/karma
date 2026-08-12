@@ -1,0 +1,31 @@
+# Node.js
+node_modules/
+
+# Environment files
+.env
+*.env
+
+# Build output
+dist/
+build/
+
+# Python
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Debug and editor
+*.log
+*.swp
+*.swo
+.DS_Store
+.vscode/
+.idea/
+
+# mcp-tools (scripts python sueltos, ver mcp-tools/README.md)
+mcp-tools/output/
+mcp-tools/**/interfaces.json
