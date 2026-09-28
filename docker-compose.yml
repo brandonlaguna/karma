@@ -133,7 +133,11 @@ services:
     environment:
       NODE_ENV: development
       PORT: ${BACKEND_PORT}
+      # "ollama" (default, local/sin costo) o "openai" (API real, de
+      # pago) -- ver el comentario junto a AI_PROVIDER en src/index.ts.
+      AI_PROVIDER: ${AI_PROVIDER}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHAT_MODEL: ${CHAT_MODEL}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
       MCP_SERVER_URL: ${MCP_SERVER_URL}
       MAX_TOOL_ITERATIONS: ${MAX_TOOL_ITERATIONS}

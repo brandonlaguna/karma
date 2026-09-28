@@ -9,10 +9,29 @@ const app = express();
 
 app.use(express.json());
 
-const client = new OpenAI({
-  baseURL: "http://host.docker.internal:11434/v1",
-  apiKey: "ollama"
-});
+// Proveedor del modelo de chat -- "ollama" (local, sin costo, default)
+// o "openai" (API real de OpenAI, de pago). Configurable vía AI_PROVIDER
+// para alternar sin tocar código entre lab/dev (Ollama) y un deploy que
+// necesite mejor calidad de respuesta. OJO: con "openai", el JSON crudo
+// de cada alerta (IPs, nombres de dispositivo, topología) y resultados
+// de tools (traceroutes, gráficas) salen a la API de OpenAI -- confirmar
+// que eso sea aceptable para los clientes cuya infraestructura pasa por
+// ahí antes de usarlo en producción.
+const AI_PROVIDER = process.env.AI_PROVIDER || "ollama";
+
+const client = AI_PROVIDER === "openai"
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : new OpenAI({
+      baseURL: `${process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434"}/v1`,
+      apiKey: "ollama"
+    });
+
+// Modelo por defecto según el proveedor -- CHAT_MODEL para OpenAI,
+// LOCAL_MODEL para Ollama (ver docker-compose.yml / .env). El request
+// puede seguir pisándolo con { "model": "..." } si hace falta.
+const DEFAULT_MODEL = AI_PROVIDER === "openai"
+  ? (process.env.CHAT_MODEL || "gpt-4.1-mini")
+  : (process.env.LOCAL_MODEL || "qwen3:8b");
 
 // Tope de rondas de tool-calling por conversación. Sin esto, un modelo
 // que se queda pidiendo tools indefinidamente (o un loop de tools que
@@ -197,13 +216,12 @@ app.post("/chat", async (req, res) => {
 
     const {
       message,
-      // FIX: antes hardcodeado -- ahora lee LOCAL_MODEL del entorno
-      // (ver docker-compose.yml), así cada servidor puede usar un
-      // modelo acorde a su RAM disponible sin tocar código. Ej. este
-      // mismo default "qwen3:8b" hace OOM en un host con ~4GB
-      // disponibles para Ollama en CPU-only -- ahí conviene algo como
-      // "qwen3:4b" vía LOCAL_MODEL en el .env de ese server.
-      model = process.env.LOCAL_MODEL || "qwen3:8b",
+      // Ver DEFAULT_MODEL arriba -- depende de AI_PROVIDER (LOCAL_MODEL
+      // para Ollama, CHAT_MODEL para OpenAI). Ej. "qwen3:8b" hace OOM en
+      // un host con ~4GB disponibles para Ollama en CPU-only -- ahí
+      // conviene algo como "qwen3:4b" vía LOCAL_MODEL en el .env de ese
+      // server.
+      model = DEFAULT_MODEL,
       systemPrompt = GENERAL_ASSISTANT_SYSTEM_PROMPT,
       // Qwen3 soporta un modo "thinking" (razonamiento largo antes de
       // responder) que dispara la latencia para casos de uso donde no
@@ -262,7 +280,11 @@ app.post("/chat", async (req, res) => {
       ? [...existingConversation.messages, { role: "user", content: message }]
       : await (async () => {
           const baseSystemPrompt = context === "alert_triage" ? ALERT_TRIAGE_SYSTEM_PROMPT : systemPrompt;
-          const effectiveSystemPrompt = thinking ? baseSystemPrompt : `${baseSystemPrompt}\n/no_think`;
+          // "/no_think" es el flag propio de Qwen3 para desactivar su
+          // modo "thinking" -- no existe en la API de OpenAI, así que
+          // solo se agrega corriendo contra Ollama.
+          const effectiveSystemPrompt =
+            thinking || AI_PROVIDER === "openai" ? baseSystemPrompt : `${baseSystemPrompt}\n/no_think`;
 
           const initialMessages: any[] = [{ role: "system", content: effectiveSystemPrompt }];
 
