@@ -170,3 +170,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_site_code
 -- ---------------------------------------------------------------------
 ALTER TABLE teams DROP CONSTRAINT IF EXISTS teams_name_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_name_country_unique ON teams(name, country_id);
+
+-- ---------------------------------------------------------------------
+-- Auditoría de cambios a la matriz hecha por los endpoints de escritura
+-- (api/escalationAdmin.routes.js): esta matriz decide a quién se llama en
+-- un incidente, así que cada alta/cambio/baja queda con quién lo hizo.
+-- authenticated=false = llegó sin token válido (modo permisivo, ver
+-- auth/jwtMiddleware.js); actor_id/actor_name salen del JWT de EPISTECH.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS escalation_audit_log (
+  id SERIAL PRIMARY KEY,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actor_id VARCHAR(100),
+  actor_name VARCHAR(150),
+  authenticated BOOLEAN NOT NULL DEFAULT false,
+  action VARCHAR(50) NOT NULL,
+  entity VARCHAR(50) NOT NULL,
+  entity_id INTEGER,
+  payload JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_escalation_audit_entity ON escalation_audit_log(entity, entity_id);
+CREATE INDEX IF NOT EXISTS idx_escalation_audit_occurred ON escalation_audit_log(occurred_at);

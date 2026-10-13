@@ -1,15 +1,14 @@
 services:
-
   redis:
     image: redis:7-alpine
     container_name: ai_redis
     restart: always
     env_file:
       - .env
-    # 6380 externo (no 6379) para no chocar con el Redis que ya usa
+    # 6381 externo (no 6379) para no chocar con el Redis que ya usa
     # Epistech en el mismo host. Internamente sigue en 6379 (net_container).
     ports:
-      - "6380:6379"
+      - "6381:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -165,8 +164,8 @@ services:
     env_file:
       - .env
     # volumes:
-      # - ./backend:/app
-      # - backend_node_modules:/app/node_modules
+    # - ./backend:/app
+    # - backend_node_modules:/app/node_modules
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -213,6 +212,7 @@ services:
       QDRANT_URL: ${QDRANT_URL}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       EPISTECH_BACKEND_URL: ${EPISTECH_BACKEND_URL}
       CI: "true"
@@ -221,8 +221,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # volumes:
-      # - ./mcp-server:/app
-      # - mcp_node_modules:/app/node_modules
+    # - ./mcp-server:/app
+    # - mcp_node_modules:/app/node_modules
 
     depends_on:
       - redis

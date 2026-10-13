@@ -10,6 +10,8 @@
  * etc), con el estado/historial ya resueltos. Mismo patrón que
  * tools/opmanager.js.
  */
+import { internalAuthHeaders } from "../auth/internalToken.js";
+
 const EPISTECH_BACKEND_URL = process.env.EPISTECH_BACKEND_URL || "http://epistech-backend:4000";
 
 async function getFromEpistech(path) {
@@ -17,7 +19,7 @@ async function getFromEpistech(path) {
 
   let res;
   try {
-    res = await fetch(url);
+    res = await fetch(url, { headers: internalAuthHeaders() });
   } catch (networkError) {
     // Ver tools/opmanager.js -- mismo motivo para envolver el error acá.
     throw new Error(

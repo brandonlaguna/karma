@@ -9,10 +9,23 @@ INSERT INTO countries (iso_code, name) VALUES ('CO', 'Colombia')
 ON CONFLICT (iso_code) DO NOTHING;
 
 INSERT INTO escalation_levels (level_number, name, trigger_description) VALUES
-  (0, 'Contacto Inicial', 'Primer punto de contacto del área -- buzón/soporte general, antes de escalar a una persona.')
+  (0, 'Contacto Inicial', 'Primer punto de contacto del área -- buzón/soporte general, antes de escalar a una persona.'),
+  -- FIX: sin estas filas, los JOIN de la matriz RACI más abajo descartaban
+  -- en silencio todas las asignaciones de nivel 1-3 (solo quedaba el nivel 0).
+  -- El Excel no define cuándo aplica cada nivel ni sus tiempos -- por eso
+  -- trigger_description y SLAs quedan vacíos en vez de inventarlos.
+  (1, 'Nivel 1', NULL),
+  (2, 'Nivel 2', NULL),
+  (3, 'Nivel 3', NULL)
 ON CONFLICT (level_number) DO NOTHING;
 
-INSERT INTO teams (name) VALUES
+-- Unicidad de teams = (name, country_id) (ver schema.sql, "Corrección de
+-- diseño 2026-08-05"). Se inserta YA con country_id: con NULL el índice
+-- único nunca detecta conflicto y cada corrida del seed duplicaba los
+-- equipos.
+INSERT INTO teams (name, country_id)
+SELECT v.name, co.id
+FROM (VALUES
   ('Redes'),
   ('Servidores'),
   ('Telefonía'),
@@ -24,12 +37,9 @@ INSERT INTO teams (name) VALUES
   ('Infraestructura Nevados-Olaya'),
   ('Infraestructura Medellín'),
   ('Desarrollo')
--- FIX: el schema (ver schema.sql, "Corrección de diseño 2026-08-05")
--- cambió la unicidad de teams de "name" solo a "(name, country_id)" --
--- cada país necesita su propia fila (CO-REDES vs PE-REDES). Este INSERT
--- inserta sin country_id todavía (se asigna después con el UPDATE más
--- abajo), así que el conflicto real es contra (name, country_id) con
--- country_id NULL en este punto -- coincide con idx_teams_name_country_unique.
+) AS v(name)
+CROSS JOIN countries co
+WHERE co.iso_code = 'CO'
 ON CONFLICT (name, country_id) DO NOTHING;
 
 INSERT INTO contacts (name, email, phone) VALUES
@@ -114,7 +124,7 @@ FROM (VALUES
 ) AS v(level_number, country_iso, team_name, contact_key, schedule, response_time, description)
 JOIN escalation_levels lvl ON lvl.level_number = v.level_number
 JOIN countries co ON co.iso_code = v.country_iso
-JOIN teams t ON t.name = v.team_name
+JOIN teams t ON t.name = v.team_name AND t.country_id = co.id
 JOIN contacts c ON c.email = v.contact_key OR (c.email IS NULL AND c.name = v.contact_key)
 ON CONFLICT (escalation_level_id, country_id, team_id, contact_id, raci_role) DO NOTHING;
 
@@ -126,7 +136,9 @@ ON CONFLICT (escalation_level_id, country_id, team_id, contact_id, raci_role) DO
 -- así que también se marcan con country_id = Colombia, igual que las
 -- sedes "Infraestructura X".
 UPDATE teams SET country_id = (SELECT id FROM countries WHERE iso_code = 'CO')
-WHERE name IN (
+-- country_id IS NULL: sin este filtro también reasignaba a Colombia los
+-- equipos homónimos de Perú/Chile/México (ver seed.multicountry-...).
+WHERE country_id IS NULL AND name IN (
   'Redes',
   'Servidores',
   'Telefonía',

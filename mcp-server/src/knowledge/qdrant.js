@@ -24,6 +24,16 @@ export async function ensureCollection() {
       vectors: { size: EMBEDDING_VECTOR_SIZE, distance: "Cosine" },
     });
     console.log(`Colección "${COLLECTION_NAME}" creada en Qdrant (${EMBEDDING_VECTOR_SIZE} dim, coseno).`);
+  } else {
+    const info = await client.getCollection(COLLECTION_NAME);
+    const existingSize = info.config?.params?.vectors?.size;
+    if (existingSize && existingSize !== EMBEDDING_VECTOR_SIZE) {
+      throw new Error(
+        `La colección "${COLLECTION_NAME}" guarda vectores de ${existingSize} dim pero el modelo de embeddings ` +
+          `activo produce ${EMBEDDING_VECTOR_SIZE}. Se cambió EMBEDDING_PROVIDER/EMBEDDING_MODEL: borra la colección ` +
+          `(o usa otra QDRANT_COLLECTION) y vuelve a correr "pnpm run ingest".`
+      );
+    }
   }
 
   collectionReady = true;

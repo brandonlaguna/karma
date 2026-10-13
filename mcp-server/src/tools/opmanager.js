@@ -8,6 +8,8 @@
  * existen en Epistech (EpistechBackend/routes/opmanager.route.js), para
  * no duplicar la lógica de autenticación/throttling que ya vive ahí.
  */
+import { internalAuthHeaders } from "../auth/internalToken.js";
+
 const EPISTECH_BACKEND_URL = process.env.EPISTECH_BACKEND_URL || "http://epistech-backend:4000";
 
 async function postToEpistech(path, body) {
@@ -17,7 +19,7 @@ async function postToEpistech(path, body) {
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalAuthHeaders() },
       body: JSON.stringify(body),
     });
   } catch (networkError) {
@@ -73,28 +75,172 @@ export async function getDeviceNotes({ name, eeProbeID }) {
  * Estado/tráfico de una interfaz específica del dispositivo (cuando la
  * alerta aplica a una interfaz puntual, no al dispositivo completo).
  */
-export async function getInterfaceGraphs({ eeProbeID, interfaceName, graphName, isFluidic, graphFilterType, period }) {
-  return postToEpistech("getInterfaceGraphs", { eeProbeID, interfaceName, graphName, isFluidic, graphFilterType, period });
+// OpManager exige graphName/isFluidic/graphFilterType/period; los defaults son
+// los de la consulta de tráfico del día que usa su propia interfaz.
+export async function getInterfaceGraphs({
+  eeProbeID,
+  interfaceName,
+  graphName = "traffic",
+  isFluidic = true,
+  graphFilterType = "avg",
+  period = "Today",
+}) {
+  // El "entity" de las alertas de caída trae un sufijo "_Poll" que OpManager rechaza.
+  return postToEpistech("getInterfaceGraphs", {
+    eeProbeID,
+    interfaceName: interfaceName.replace(/_Poll$/, ""),
+    graphName,
+    isFluidic,
+    graphFilterType,
+    period,
+  });
 }
 
 /**
- * graphData puede traer muchos puntos (uno por intervalo de muestreo
- * de OpManager en todo el período pedido) -- eso satura el contexto
- * del modelo sin aportar mucho más que la tendencia. Se reduce a una
- * muestra uniforme (mismo espaciado en el tiempo) en vez de cortar por
- * los primeros N, para no perder picos que hayan pasado a mitad del
- * período.
+ * Resuelve la interfaz exacta de una alerta sin armar nombres a mano: el detalle
+ * de la alarma (getAlarmsProperties) trae "InterfaceName" y "probeID" tal como
+ * los espera OpManager. Las alertas de dispositivo (caído, partición, etc.) no lo
+ * traen: ahí no hay interfaz que consultar. Sin "entity" se usan los valores dados.
  */
-export function sampleGraphData(graphData, maxPoints = 5) {
-  if (!Array.isArray(graphData) || graphData.length <= maxPoints) {
-    return graphData;
+export async function resolveInterface({ entity, eeProbeID, interfaceName }) {
+  if (entity) {
+    const alarm = (await getAlarmsProperties({ entity }))?.response;
+    if (!alarm?.InterfaceName) {
+      throw new Error(
+        `La alarma "${entity}" no es de una interfaz (OpManager no devuelve InterfaceName, tipo: ${alarm?.EVENTTYPE ?? "desconocido"}): ` +
+          "es una alerta de dispositivo, no hay gráficas de interfaz que consultar."
+      );
+    }
+    return { eeProbeID: alarm.probeID, interfaceName: alarm.InterfaceName };
   }
-  const step = (graphData.length - 1) / (maxPoints - 1);
-  const sampled = [];
-  for (let i = 0; i < maxPoints; i++) {
-    sampled.push(graphData[Math.round(i * step)]);
+
+  if (!eeProbeID || !interfaceName) {
+    throw new Error('Indica el "entity" de la alerta, o bien "eeProbeID" e "interfaceName".');
   }
-  return sampled;
+  return { eeProbeID, interfaceName };
+}
+
+/**
+ * Resuelve el dispositivo de una alerta desde el detalle de su alarma: el
+ * probeID y el "source" ("{ip}.{probeID}"), que es el único identificador que
+ * OpManager acepta como nombre en notas y traceroute (con el nombre para
+ * mostrar o la IP el traceroute responde "Unable to resolve target system").
+ */
+export async function resolveAlarmDevice({ entity }) {
+  const alarm = (await getAlarmsProperties({ entity }))?.response;
+  if (!alarm?.probeID || !alarm?.source) {
+    throw new Error(`OpManager no devolvió el dispositivo de la alarma "${entity}".`);
+  }
+  return { eeProbeID: alarm.probeID, source: alarm.source, tipo: alarm.EVENTTYPE, severidadActual: alarm.stringseverity };
+}
+
+/**
+ * El detalle crudo de la alarma trae ~100 campos de interfaz web (iconos, flags
+ * de botones, ids internos) y todo el historial de eventos. Se entrega lo que
+ * sirve para analizar -- tipo, severidad ACTUAL, dispositivo, interfaz si aplica,
+ * quién la reconoció -- y solo los eventos más recientes.
+ */
+export function compactAlarmProperties(result, maxEvents = 8) {
+  const alarm = result?.response;
+  if (!alarm || typeof alarm !== "object") return result;
+
+  const events = Array.isArray(alarm.events) ? alarm.events : [];
+
+  return {
+    httpCode: result.httpCode,
+    alarma: {
+      tipo: alarm.EVENTTYPE,
+      codigo: alarm.ALARMCODE,
+      severidadActual: alarm.stringseverity,
+      mensaje: alarm.message,
+      dispositivo: alarm.displayName,
+      fabricante: alarm.vendorName,
+      categoria: alarm.category,
+      source: alarm.source,
+      probeID: alarm.probeID,
+      deviceID: alarm.deviceID,
+      interfaz: alarm.InterfaceName ? { interfaceName: alarm.InterfaceName, nombre: alarm.Interfacedisplayname } : null,
+      creada: alarm.createTimeStr,
+      ultimaModificacion: alarm.modTimeStr,
+      reconocidaPor: alarm.who || alarm.owner || null,
+      dispositivoDisponible: alarm.isDeviceAvailable,
+      suprimida: alarm.isSuppressed,
+    },
+    totalEventos: events.length,
+    eventosRecientes: events.slice(0, maxEvents).map((event) => ({
+      hora: event.time,
+      severidad: event.severity,
+      texto: event.text,
+    })),
+  };
+}
+
+/**
+ * getDeviceNotes devuelve, por cada customField, metadatos de formulario
+ * (DATATYPE, ISEDITABLE, FIELDLENGTH, ALIASNAME...) que no aportan al análisis
+ * y sí mezclan al modelo. Se entrega solo { campo: valor } de los que tienen valor.
+ */
+export function compactDeviceNotes(result) {
+  if (!Array.isArray(result?.response)) return result;
+
+  const campos = {};
+  for (const field of result.response) {
+    const value = String(field.FIELDVALUE ?? "").trim();
+    if (field.FIELDNAME && value) campos[field.FIELDNAME] = value;
+  }
+
+  return { httpCode: result.httpCode, campos };
+}
+
+/**
+ * La respuesta cruda de getInterfaceGraphs pesa ~100 KB (~26.000 tokens): cada
+ * serie (Rx/Tx) trae cientos de puntos [timestamp, valor, etiqueta]. El modelo
+ * no necesita los puntos sino el resumen, así que se devuelve: lo que ya
+ * calcula OpManager (consolidatedValues), estadísticas por serie calculadas
+ * sobre TODOS los puntos (así no se pierden picos) y una muestra uniforme
+ * pequeña para ver la tendencia.
+ */
+export function summarizeInterfaceGraphs(result, samplePoints = 12) {
+  const data = result?.response;
+  if (!data || !Array.isArray(data.graphData)) return result;
+
+  const iso = (timestamp) => new Date(Number(timestamp)).toISOString();
+
+  const series = data.graphData.map((serie) => {
+    const points = Array.isArray(serie.data) ? serie.data : [];
+    const values = points.map((point) => Number(point[1])).filter(Number.isFinite);
+    const summary = { nombre: serie.seriesname, puntos: points.length };
+
+    if (!values.length) return summary;
+
+    const max = Math.max(...values);
+    const last = points[points.length - 1];
+    const step = Math.max(1, (points.length - 1) / (samplePoints - 1));
+
+    return {
+      ...summary,
+      desde: iso(points[0][0]),
+      hasta: iso(last[0]),
+      min: Math.min(...values),
+      max,
+      pico_en: iso(points[values.indexOf(max)][0]),
+      promedio: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100,
+      ultimo: { valor: Number(last[1]), etiqueta: String(last[2] ?? "").trim() },
+      muestra: Array.from({ length: Math.min(samplePoints, points.length) }, (_, i) => {
+        const point = points[Math.round(i * step)];
+        return [iso(point[0]), Number(point[1])];
+      }),
+    };
+  });
+
+  return {
+    httpCode: result.httpCode,
+    interfaz: data.interfaceDetails,
+    grafica: data.displayName,
+    unidad: Array.isArray(data.xyTitles) ? data.xyTitles[1] : undefined,
+    resumenOpManager: data.consolidatedValues,
+    series,
+  };
 }
 
 /**

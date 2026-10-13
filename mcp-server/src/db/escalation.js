@@ -43,6 +43,24 @@ export async function getEscalationMatrix({
     }
   }
 
+  // resolver_group_code y site_code son únicos en teams, así que un código
+  // exacto ya identifica UN equipo y, por lo tanto, su país -- quien consulta
+  // no necesita mandar el ISO aparte.
+  if (countryId === null && !countryCode && !opmanagerProbeId && (resolverGroupCode || siteCode)) {
+    const column = resolverGroupCode ? "resolver_group_code" : "site_code";
+    const teamCountry = await pool.query(
+      `SELECT c.id, c.iso_code, c.name
+       FROM teams t
+       JOIN countries c ON c.id = t.country_id
+       WHERE t.${column} = $1`,
+      [resolverGroupCode || siteCode]
+    );
+    if (teamCountry.rows[0]) {
+      countryId = teamCountry.rows[0].id;
+      resolvedCountry = { iso_code: teamCountry.rows[0].iso_code, name: teamCountry.rows[0].name };
+    }
+  }
+
   const params = [];
   let levelFilter = "";
   if (levelNumber !== undefined && levelNumber !== null) {
@@ -70,6 +88,7 @@ export async function getEscalationMatrix({
 
   const query = `
     SELECT
+      raci.id AS assignment_id,
       lvl.level_number,
       lvl.name AS level_name,
       lvl.trigger_description,
