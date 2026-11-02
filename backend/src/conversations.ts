@@ -52,9 +52,16 @@ function trimToMaxTurns(messages: any[], maxTurns: number): any[] {
   const systemMessage = hasSystem ? [messages[0]] : [];
   const rest = hasSystem ? messages.slice(1) : messages;
 
+  // En el formato de Claude los resultados de tools también son mensajes
+  // role:"user" (con bloques tool_result): no abren un turno nuevo. Contarlos
+  // como inicio de turno podría cortar entre un tool_use y su tool_result y la
+  // siguiente llamada al modelo fallaría.
+  const isToolResult = (m: any) =>
+    Array.isArray(m.content) && m.content.some((block: any) => block?.type === "tool_result");
+
   const turnStarts: number[] = [];
   rest.forEach((m, i) => {
-    if (m.role === "user") turnStarts.push(i);
+    if (m.role === "user" && !isToolResult(m)) turnStarts.push(i);
   });
 
   if (turnStarts.length <= maxTurns) {

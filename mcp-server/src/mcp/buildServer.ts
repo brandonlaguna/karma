@@ -256,6 +256,68 @@ export function buildServer() {
   );
 
   // ------------------------------------------------------------------
+  // Alertas de ZABBIX -- reusan los endpoints /api/insights de
+  // EpistechBackend (mismo patrón que las demás tools: no le hablan a
+  // Zabbix directo). Los hechos (conteos, duraciones, recurrencia,
+  // concurrencia) salen de consultas exactas; el modelo solo los
+  // interpreta.
+  // ------------------------------------------------------------------
+
+  server.registerTool(
+    "get_zabbix_alert_insight",
+    {
+      title: "Detalle e histórico de una alerta de Zabbix",
+      description:
+        "Detalle enriquecido de UNA alerta de ZABBIX: (1) contexto EN VIVO -- equipo, disparador con su condición y notas, estado actual, otros problemas abiertos en el mismo equipo y estado del ping; (2) HISTÓRICO del disparador -- cuántas veces ocurrió en las últimas 24 h / 7 d / 30 d / 90 d, duración promedio, mediana y máxima, horarios y días más frecuentes, cuántas veces se recuperó en menos de 5 min (intermitencia), y qué otros problemas del mismo equipo coinciden en el tiempo (posible causa común). Úsala para \"¿por qué pasa esto?\", \"¿cuántas veces se ha repetido?\", \"¿cada cuándo?\", \"¿es recurrente o nuevo?\", \"dame más detalle\" y para analizar cualquier alerta de Zabbix. NO sirve para alertas de OpManager (para esas usa las tools de OpManager). Recibe el ID INTERNO de la alerta (alerts.id, el mismo que se usa en get_alert_by_id). Los datos son exactos: cítalos tal cual con su ventana y NO inventes causas que no se desprendan de ellos; si dice que el contexto no está disponible, dilo en vez de suponerlo. Si \"yaRecuperadaEnZabbix\" es true, la alerta ya se resolvió en Zabbix.",
+      inputSchema: {
+        alertId: z
+          .union([z.string(), z.number()])
+          .describe("ID interno de la alerta en Epistech (alerts.id -- NO el alert_id/evento de Zabbix)"),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe("Ventana del histórico en días (default 90, máximo 365). Normalmente se omite."),
+      },
+    },
+    async ({ alertId, days }) => {
+      const result = await epistech.getZabbixAlertInsight({ alertId, days });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
+    "get_zabbix_active_overview",
+    {
+      title: "Resumen de alertas activas de Zabbix",
+      description:
+        "Resumen de las alertas ACTIVAS (abiertas) de Zabbix: total, conteo por severidad, por GRUPO DE EQUIPOS de Zabbix (que normalmente corresponde al cliente o la entidad), por equipo, y el listado de las más graves con su id interno. Úsala para \"¿qué alertas hay activas ahora?\", \"¿cuántas críticas hay?\", \"¿qué cliente/grupo tiene más alertas?\", \"¿qué equipos son los más ruidosos?\". Para solo las graves usa minSeverity=4 (4 = Alta, 5 = Desastre). Los grupos de equipos pueden incluir grupos genéricos (por ejemplo por tecnología) además del cliente: si el nombre de un grupo no es claramente un cliente, dilo en vez de afirmarlo. Para profundizar en una alerta del listado usa get_zabbix_alert_insight con su \"id\".",
+      inputSchema: {
+        minSeverity: z
+          .number()
+          .int()
+          .min(0)
+          .max(5)
+          .optional()
+          .describe("Severidad mínima a contar (0 = todas, 3 = Media o más, 4 = Alta o Desastre). Default 0."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Cuántas alertas listar, de las más graves a las menos (default 20, máximo 100)."),
+      },
+    },
+    async ({ minSeverity, limit }) => {
+      const result = await epistech.getZabbixActiveOverview({ minSeverity, limit });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  );
+
+  // ------------------------------------------------------------------
   // Investigación de alertas OpManager -- reusan las rutas que ya
   // existen en EpistechBackend (no le hablan a OpManager directo). El
   // flujo típico: get_device_info primero para resolver "probeID" a

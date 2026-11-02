@@ -14,13 +14,20 @@ import { internalAuthHeaders } from "../auth/internalToken.js";
 
 const EPISTECH_BACKEND_URL = process.env.EPISTECH_BACKEND_URL || "http://epistech-backend:4000";
 
-async function getFromEpistech(path) {
+async function getFromEpistech(path, { timeoutMs } = {}) {
   const url = `${EPISTECH_BACKEND_URL}${path}`;
 
   let res;
   try {
-    res = await fetch(url, { headers: internalAuthHeaders() });
+    res = await fetch(url, {
+      headers: internalAuthHeaders(),
+      // Sin tope, una consulta lenta a Zabbix dejaría colgado el chat; con tope falla con un error claro.
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+    });
   } catch (networkError) {
+    if (networkError.name === "TimeoutError") {
+      throw new Error(`EpistechBackend ${path} no respondió en ${Math.round(timeoutMs / 1000)} s (Zabbix lento o sin respuesta).`);
+    }
     // Ver tools/opmanager.js -- mismo motivo para envolver el error acá.
     throw new Error(
       `No se pudo conectar a EpistechBackend en ${url} -- ${networkError.cause?.code || networkError.message}. ` +
@@ -51,4 +58,24 @@ export async function getAlertById({ alertId }) {
   // (ver utils/response.js + eventsService.getEventById) -- se devuelve
   // ya desenvuelto para no obligar al modelo a navegar el envoltorio.
   return json?.response?.event ?? json;
+}
+
+/**
+ * Detalle enriquecido de una alerta de ZABBIX (contexto en vivo + histórico del disparador), calculado
+ * por EpistechBackend (/api/insights/zabbix/alerts/:id). Recibe el id interno de la alerta (alerts.id).
+ */
+export async function getZabbixAlertInsight({ alertId, days }) {
+  const query = days ? `?days=${encodeURIComponent(days)}` : "";
+  const json = await getFromEpistech(`/api/insights/zabbix/alerts/${encodeURIComponent(alertId)}${query}`, { timeoutMs: 45000 });
+  return json?.response ?? json;
+}
+
+/** Resumen de las alertas activas de Zabbix (por severidad, grupo de equipos y equipo). */
+export async function getZabbixActiveOverview({ limit, minSeverity }) {
+  const params = new URLSearchParams();
+  if (limit != null) params.set("limit", String(limit));
+  if (minSeverity != null) params.set("minSeverity", String(minSeverity));
+  const query = params.toString() ? `?${params}` : "";
+  const json = await getFromEpistech(`/api/insights/zabbix/active${query}`, { timeoutMs: 45000 });
+  return json?.response ?? json;
 }

@@ -11,7 +11,9 @@ import jwt from "jsonwebtoken";
 export function internalAuthHeaders() {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error("JWT_SECRET no está configurado en ai-lab: EpistechBackend rechazaría la llamada de las tools (401).");
+    throw new Error(
+      "JWT_SECRET no está configurado en ai-lab: EpistechBackend rechazaría la llamada de las tools (401)."
+    );
   }
 
   const token = jwt.sign({ user: { Id: 0, Nombre: "ai-lab-mcp", CLAIMS: [] }, internal: true }, secret, {

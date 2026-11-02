@@ -1,6 +1,8 @@
 import express from "express";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
+import { runAnthropicChat } from "./anthropicChat.js";
 import { listToolsForLLM } from "./mcp/client.js";
 import { executeTool } from "./toolExecutor/index.js";
 import { getConversation, saveConversation, createConversationId } from "./conversations.js";
@@ -9,29 +11,62 @@ const app = express();
 
 app.use(express.json());
 
-// Proveedor del modelo de chat -- "ollama" (local, sin costo, default)
-// o "openai" (API real de OpenAI, de pago). Configurable vía AI_PROVIDER
-// para alternar sin tocar código entre lab/dev (Ollama) y un deploy que
-// necesite mejor calidad de respuesta. OJO: con "openai", el JSON crudo
-// de cada alerta (IPs, nombres de dispositivo, topología) y resultados
-// de tools (traceroutes, gráficas) salen a la API de OpenAI -- confirmar
-// que eso sea aceptable para los clientes cuya infraestructura pasa por
-// ahí antes de usarlo en producción.
-const AI_PROVIDER = process.env.AI_PROVIDER || "ollama";
+// Proveedor del modelo de chat -- "ollama" (local, sin costo, default),
+// "openai" (API de OpenAI, de pago) o "anthropic" (Claude, de pago).
+// Configurable vía AI_PROVIDER para alternar sin tocar código entre
+// lab/dev (Ollama) y un deploy que necesite mejor calidad de respuesta
+// (o cuyo cliente ya tenga contratado uno de los dos). OJO: con "openai"
+// o "anthropic", el JSON crudo de cada alerta (IPs, nombres de
+// dispositivo, topología) y resultados de tools (traceroutes, gráficas)
+// salen a la API de ese proveedor -- confirmar que sea aceptable para los
+// clientes cuya infraestructura pasa por ahí antes de usarlo en producción.
+const SUPPORTED_PROVIDERS = ["ollama", "openai", "anthropic"] as const;
+type Provider = (typeof SUPPORTED_PROVIDERS)[number];
 
-const client = AI_PROVIDER === "openai"
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : new OpenAI({
-      baseURL: `${process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434"}/v1`,
-      apiKey: "ollama"
-    });
+const requestedProvider = (process.env.AI_PROVIDER || "ollama").trim().toLowerCase();
+const AI_PROVIDER: Provider = (SUPPORTED_PROVIDERS as readonly string[]).includes(requestedProvider)
+  ? (requestedProvider as Provider)
+  : "ollama";
+
+if (AI_PROVIDER !== requestedProvider) {
+  console.warn(
+    `AI_PROVIDER="${requestedProvider}" no es válido (usar ${SUPPORTED_PROVIDERS.join(" | ")}); se usa "ollama".`
+  );
+}
+
+// Ollama y OpenAI hablan el mismo formato (chat completions); Claude tiene su
+// propio cliente y su propio loop (ver anthropicChat.ts). Solo se crea el
+// cliente del proveedor activo.
+const openaiCompatClient =
+  AI_PROVIDER === "openai"
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : AI_PROVIDER === "ollama"
+      ? new OpenAI({
+          baseURL: `${process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434"}/v1`,
+          apiKey: "ollama"
+        })
+      : null;
+
+// El SDK toma ANTHROPIC_API_KEY del entorno por su cuenta; nunca se pasa por código ni se loguea.
+const anthropicClient =
+  AI_PROVIDER === "anthropic"
+    ? new Anthropic({ timeout: Number(process.env.ANTHROPIC_TIMEOUT_MS) || 55000, maxRetries: 2 })
+    : null;
+
+if (AI_PROVIDER === "anthropic" && !process.env.ANTHROPIC_API_KEY) {
+  console.warn("AI_PROVIDER=anthropic pero ANTHROPIC_API_KEY no está definida: el chat responderá con error de credenciales.");
+}
 
 // Modelo por defecto según el proveedor -- CHAT_MODEL para OpenAI,
-// LOCAL_MODEL para Ollama (ver docker-compose.yml / .env). El request
-// puede seguir pisándolo con { "model": "..." } si hace falta.
-const DEFAULT_MODEL = AI_PROVIDER === "openai"
-  ? (process.env.CHAT_MODEL || "gpt-4.1-mini")
-  : (process.env.LOCAL_MODEL || "qwen3:8b");
+// ANTHROPIC_CHAT_MODEL para Claude, LOCAL_MODEL para Ollama (ver
+// docker-compose.yml / .env). El request puede seguir pisándolo con
+// { "model": "..." } si hace falta.
+const DEFAULT_MODEL =
+  AI_PROVIDER === "openai"
+    ? (process.env.CHAT_MODEL || "gpt-4.1-mini")
+    : AI_PROVIDER === "anthropic"
+      ? (process.env.ANTHROPIC_CHAT_MODEL || "claude-sonnet-5-5")
+      : (process.env.LOCAL_MODEL || "qwen3:8b");
 
 // Tope de rondas de tool-calling por conversación. Sin esto, un modelo
 // que se queda pidiendo tools indefinidamente (o un loop de tools que
@@ -95,7 +130,23 @@ preguntando:
   contexto de la alerta ni volver a llamar get_alert_by_id -- no todo en
   esta conversación tiene que girar en torno a la alerta inicial.
 
+SEGÚN EL VENDOR DE LA ALERTA (campo "vendor_name" del detalle ya cargado):
+- Si es ZABBIX: investiga con "get_zabbix_alert_insight", pasándole el
+  mismo ID interno de la alerta (alertId). Trae el contexto en vivo del
+  equipo y el HISTÓRICO exacto del disparador (cuántas veces, duración,
+  horarios, intermitencia, qué otros problemas del equipo coinciden).
+  Las tools de OpManager (get_alarm_properties, get_device_notes,
+  get_interface_graphs, get_trace_response) NO aplican a alertas de
+  Zabbix: no las llames. Basa la respuesta SOLO en lo que devuelven las
+  tools; cita las cifras con su ventana ("3 veces en 30 días") y no
+  inventes causas que esos datos no sustenten -- si algo "no está
+  disponible", dilo. No menciones nombres internos de campos técnicos.
+- Si es OPMANAGER: usa las tools de OpManager descritas abajo.
+
 Tools disponibles para esto y cuándo usarlas:
+- "get_zabbix_alert_insight": SOLO para alertas de Zabbix (ver arriba).
+  Para preguntas como "¿cuántas veces ha pasado?", "¿es recurrente?",
+  "¿qué más falló al mismo tiempo?" o un análisis general de la alerta.
 - "get_alert_by_id": normalmente NO hace falta llamarla -- el backend ya
   la corrió por vos (ver arriba). Trae message, severity, source,
   vendor_name, status_name/status_color (estado actual), status_history
@@ -193,6 +244,17 @@ nomenclatura de dispositivos ("search_knowledge_base" -- busca sobre
 los documentos reales cargados, ej. políticas ITIM, gestión de
 alertamiento), o cualquier otra duda general de operación de NOC.
 
+Sobre alertas de ZABBIX: para preguntas generales del ecosistema ("¿qué
+alertas hay activas?", "¿cuántas críticas?", "¿qué cliente o grupo tiene
+más alertas?", "¿qué equipos son los más ruidosos?") usa
+"get_zabbix_active_overview" (minSeverity=4 para solo Alta y Desastre).
+Para profundizar en UNA alerta del listado usa "get_zabbix_alert_insight"
+con su "id" (el id interno, no el evento de Zabbix). Responde SOLO con lo
+que devuelven las tools y cita las cifras con su ventana de tiempo. Los
+"grupos de equipos" de Zabbix suelen corresponder al cliente, pero pueden
+incluir grupos genéricos (por tecnología): si no es claro cuál es el
+cliente, dilo en lugar de afirmarlo.
+
 IMPORTANTE: no confundas las dos tools anteriores solo porque ambas
 mencionan "responsable" o "escalamiento". Regla simple: si la pregunta
 es "¿a quién llamo/contacto/escalo esto AHORA?" -> get_escalation_matrix.
@@ -211,8 +273,12 @@ Responde siempre breve y accionable para un especialista de NOC.
 
 app.get("/health", (_, res) => {
 
+  // provider/model: para comprobar desde fuera con qué modelo está corriendo
+  // este deploy (no incluye ninguna credencial).
   return res.json({
-    ok: true
+    ok: true,
+    provider: AI_PROVIDER,
+    model: DEFAULT_MODEL
   });
 
 });
@@ -288,10 +354,10 @@ app.post("/chat", async (req, res) => {
       : await (async () => {
           const baseSystemPrompt = context === "alert_triage" ? ALERT_TRIAGE_SYSTEM_PROMPT : systemPrompt;
           // "/no_think" es el flag propio de Qwen3 para desactivar su
-          // modo "thinking" -- no existe en la API de OpenAI, así que
-          // solo se agrega corriendo contra Ollama.
+          // modo "thinking" -- no existe en la API de OpenAI ni en la de
+          // Claude, así que solo se agrega corriendo contra Ollama.
           const effectiveSystemPrompt =
-            thinking || AI_PROVIDER === "openai" ? baseSystemPrompt : `${baseSystemPrompt}\n/no_think`;
+            thinking || AI_PROVIDER !== "ollama" ? baseSystemPrompt : `${baseSystemPrompt}\n/no_think`;
 
           const initialMessages: any[] = [{ role: "system", content: effectiveSystemPrompt }];
 
@@ -340,6 +406,60 @@ app.post("/chat", async (req, res) => {
 
     const callSignature = (name: string, args: unknown) => `${name}::${JSON.stringify(args)}`;
 
+    // Ejecución de UNA tool con la guardia anterior y la traza. La comparten
+    // los dos loops (OpenAI/Ollama abajo, Claude en anthropicChat.ts). Nunca
+    // lanza: un error se devuelve como contenido, para que el modelo decida
+    // si reintenta, usa otra tool o le avisa al usuario.
+    const runTool = async (toolName: string, toolArgs: any): Promise<{ content: unknown; ok: boolean }> => {
+      const signature = callSignature(toolName, toolArgs);
+      const priorError = failedCallSignatures.get(signature);
+      if (priorError) {
+        console.warn(`Tool "${toolName}" repetida con los mismos argumentos que ya fallaron -- no se reintenta.`);
+        toolCallsLog.push({ name: toolName, args: toolArgs, ok: false, error: `(no reintentado) ${priorError}` });
+        return {
+          ok: false,
+          content: `Ya intentaste esta misma llamada con estos mismos argumentos en este turno y falló con: "${priorError}". No la repitas igual -- ajusta los argumentos (ej. si falta un dato, dilo) o continúa sin ella.`
+        };
+      }
+
+      try {
+        const result = await executeTool(toolName, toolArgs);
+        toolCallsLog.push({ name: toolName, args: toolArgs, ok: true });
+        return { ok: true, content: result };
+      } catch (error: any) {
+        console.error(`Tool "${toolName}" falló:`, error.message);
+        failedCallSignatures.set(signature, error.message);
+        toolCallsLog.push({ name: toolName, args: toolArgs, ok: false, error: error.message });
+        return { ok: false, content: `Error ejecutando la tool: ${error.message}` };
+      }
+    };
+
+    // Claude: su propio loop nativo (otro formato de mensajes y de tools).
+    if (AI_PROVIDER === "anthropic") {
+      const result = await runAnthropicChat({
+        client: anthropicClient!,
+        model,
+        messages,
+        tools,
+        runTool,
+        maxIterations: MAX_TOOL_ITERATIONS
+      });
+
+      saveConversation(conversationId, result.messages);
+
+      return res.json({
+        response: result.text,
+        toolCalls: toolCallsLog,
+        ...(result.truncated ? { truncated: true } : {}),
+        conversationId,
+        provider: AI_PROVIDER,
+        model,
+        usage: result.usage
+      });
+    }
+
+    const client = openaiCompatClient!;
+
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
 
       const completion = await client.chat.completions.create({
@@ -360,7 +480,9 @@ app.post("/chat", async (req, res) => {
         return res.json({
           response: assistantMessage.content,
           toolCalls: toolCallsLog,
-          conversationId
+          conversationId,
+          provider: AI_PROVIDER,
+          model
         });
       }
 
@@ -384,25 +506,8 @@ app.post("/chat", async (req, res) => {
             ? JSON.parse(toolCall.function.arguments)
             : {};
 
-          const signature = callSignature(toolName, toolArgs);
-          const priorError = failedCallSignatures.get(signature);
-          if (priorError) {
-            console.warn(`Tool "${toolName}" repetida con los mismos argumentos que ya fallaron -- no se reintenta.`);
-            const content = `Ya intentaste esta misma llamada con estos mismos argumentos en este turno y falló con: "${priorError}". No la repitas igual -- ajusta los argumentos (ej. si falta un dato, dilo) o continúa sin ella.`;
-            toolCallsLog.push({ name: toolName, args: toolArgs, ok: false, error: `(no reintentado) ${priorError}` });
-            return { toolCall, content };
-          }
-
-          try {
-            const result = await executeTool(toolName, toolArgs);
-            toolCallsLog.push({ name: toolName, args: toolArgs, ok: true });
-            return { toolCall, content: result };
-          } catch (error: any) {
-            console.error(`Tool "${toolName}" falló:`, error.message);
-            failedCallSignatures.set(signature, error.message);
-            toolCallsLog.push({ name: toolName, args: toolArgs, ok: false, error: error.message });
-            return { toolCall, content: `Error ejecutando la tool: ${error.message}` };
-          }
+          const { content } = await runTool(toolName, toolArgs);
+          return { toolCall, content };
         })
       );
 
@@ -448,7 +553,9 @@ app.post("/chat", async (req, res) => {
       response: forcedCompletion.choices[0].message.content,
       toolCalls: toolCallsLog,
       truncated: true,
-      conversationId
+      conversationId,
+      provider: AI_PROVIDER,
+      model
     });
 
   } catch (error) {
@@ -465,6 +572,6 @@ app.post("/chat", async (req, res) => {
 
 app.listen(4000, "0.0.0.0", () => {
 
-  console.log("AI Backend running on 4000");
+  console.log(`AI Backend running on 4000 (provider=${AI_PROVIDER}, model=${DEFAULT_MODEL})`);
 
 });
