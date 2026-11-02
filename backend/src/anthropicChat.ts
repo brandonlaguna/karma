@@ -32,7 +32,16 @@ export interface AnthropicChatResult {
   usage: AnthropicChatUsage;
 }
 
-const DEFAULT_MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS) || 4096;
+// Tope de tokens de SALIDA por respuesta. Un valor absurdo (por ejemplo, copiar aquí un presupuesto diario) haría
+// que la API rechace TODAS las peticiones con un 400, así que se limita a un techo seguro para cualquier modelo.
+const MAX_TOKENS_CEILING = 32000;
+const requestedMaxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS) || 4096;
+const DEFAULT_MAX_TOKENS = Math.min(requestedMaxTokens, MAX_TOKENS_CEILING);
+if (requestedMaxTokens > MAX_TOKENS_CEILING) {
+  console.warn(
+    `ANTHROPIC_MAX_TOKENS=${requestedMaxTokens} es demasiado alto para un chat (máximo de salida por respuesta); se usa ${MAX_TOKENS_CEILING}. Lo normal es 4096.`
+  );
+}
 
 /** Tools del mcp-server (formato OpenAI, ver mcp/client.js) -> formato de Claude. */
 export function toAnthropicTools(tools: any[]): Anthropic.Tool[] {
