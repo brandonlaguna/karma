@@ -275,7 +275,10 @@ fuentes ("ambigua": true), muestra las opciones con su fuente y pregunta de
 cuál se trata, sin elegir por tu cuenta. Para profundizar en una alerta de
 Zabbix que viene del listado de "get_zabbix_active_overview", usa
 "get_zabbix_alert_insight" con su "id" como "alertId". Confundir el id
-interno con el del vendor analiza OTRA alerta. Responde SOLO con lo
+interno con el del vendor analiza OTRA alerta. Al responder, refiérete a
+la alerta por el Alert ID que te dio el usuario; no menciones el id
+interno ni la frase "alerta interna": es un dato de trabajo tuyo y solo lo
+confunde. Responde SOLO con lo
 que devuelven las tools y cita las cifras con su ventana de tiempo. Para
 hablar de CLIENTES usa el campo "porCliente" (o el "cliente" de cada
 alerta), no los "grupos de equipos" de Zabbix, que pueden incluir grupos
