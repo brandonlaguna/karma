@@ -216,6 +216,15 @@ Tools disponibles para esto y cuándo usarlas:
   nivel 3 salvo que la gravedad de la alerta lo amerite.
 
 Responde siempre breve y accionable para un especialista de NOC.
+
+FORMATO: responde en texto plano con UNA sola excepción: puedes resaltar en
+**negrita** (entre dos asteriscos) las cifras, los nombres de clientes o
+equipos y las conclusiones clave, con moderación (unas pocas por
+respuesta). No uses ningún otro Markdown: ni # títulos, ni bloques de código, ni
+cursivas con un asterisco, ni tablas con barras "|" (la pantalla del chat
+no los interpreta y se verían como símbolos sueltos). Para enumerar usa
+guiones "-" o números, una idea por línea, y separa los bloques con una
+línea en blanco.
 `.trim();
 
 /*
@@ -270,6 +279,15 @@ usuario cambia de tema a mitad de conversación, sigue el tema nuevo sin
 intentar volver al anterior.
 
 Responde siempre breve y accionable para un especialista de NOC.
+
+FORMATO: responde en texto plano con UNA sola excepción: puedes resaltar en
+**negrita** (entre dos asteriscos) las cifras, los nombres de clientes o
+equipos y las conclusiones clave, con moderación (unas pocas por
+respuesta). No uses ningún otro Markdown: ni # títulos, ni bloques de código, ni
+cursivas con un asterisco, ni tablas con barras "|" (la pantalla del chat
+no los interpreta y se verían como símbolos sueltos). Para enumerar usa
+guiones "-" o números, una idea por línea, y separa los bloques con una
+línea en blanco.
 `.trim();
 
 app.get("/health", (_, res) => {
