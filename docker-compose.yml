@@ -219,6 +219,8 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       EPISTECH_BACKEND_URL: ${EPISTECH_BACKEND_URL}
+      # Fuentes con tools en el chat (zabbix, opmanager; vacío = todas) -- ver ENABLED_VENDORS en .env.example
+      ENABLED_VENDORS: ${ENABLED_VENDORS}
       CI: "true"
     env_file:
       - .env

@@ -225,6 +225,14 @@ cursivas con un asterisco, ni tablas con barras "|" (la pantalla del chat
 no los interpreta y se verían como símbolos sueltos). Para enumerar usa
 guiones "-" o números, una idea por línea, y separa los bloques con una
 línea en blanco.
+
+HERRAMIENTAS: usa SOLO las que aparecen en tu lista. No ofrezcas, menciones
+ni prometas capacidades que no tengas (gráficas de tráfico, traceroute,
+acciones sobre equipos, etc.) ni le pidas al usuario datos para una
+herramienta que no está disponible. Si te piden algo que no puedes hacer,
+dilo con claridad y ofrece lo que sí puedes: por ejemplo, para la
+conectividad de un equipo de Zabbix usa el estado y el historial del ping
+(ICMP) que trae "get_zabbix_alert_insight".
 `.trim();
 
 /*
@@ -297,6 +305,14 @@ cursivas con un asterisco, ni tablas con barras "|" (la pantalla del chat
 no los interpreta y se verían como símbolos sueltos). Para enumerar usa
 guiones "-" o números, una idea por línea, y separa los bloques con una
 línea en blanco.
+
+HERRAMIENTAS: usa SOLO las que aparecen en tu lista. No ofrezcas, menciones
+ni prometas capacidades que no tengas (gráficas de tráfico, traceroute,
+acciones sobre equipos, etc.) ni le pidas al usuario datos para una
+herramienta que no está disponible. Si te piden algo que no puedes hacer,
+dilo con claridad y ofrece lo que sí puedes: por ejemplo, para la
+conectividad de un equipo de Zabbix usa el estado y el historial del ping
+(ICMP) que trae "get_zabbix_alert_insight".
 `.trim();
 
 app.get("/health", (_, res) => {

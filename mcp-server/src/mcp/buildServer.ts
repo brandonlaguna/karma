@@ -19,11 +19,28 @@ import * as epistech from "../tools/epistech.js";
  * tocar nada en ai-backend -- las tools se descubren en vivo vía
  * client.listTools() (ver backend/src/mcp/client.js).
  */
+/**
+ * Fuentes (vendors) cuyas tools se exponen al modelo, desde ENABLED_VENDORS (separadas por coma, ej. "zabbix" o
+ * "opmanager,zabbix"). Vacío = todas. Cada despliegue monitorea SU stack (Fusionet solo Zabbix, Atento OpManager):
+ * mostrarle al modelo tools de una fuente que no existe en ese cliente lo lleva a ofrecerlas y a fallar al usarlas,
+ * y además cada tool listada cuesta tokens en CADA mensaje.
+ */
+export function isVendorEnabled(vendor: string, raw: string | undefined = process.env.ENABLED_VENDORS): boolean {
+  const list = (raw ?? "").trim().toLowerCase();
+  if (!list) return true;
+  return list.split(",").map((item) => item.trim()).includes(vendor);
+}
+
 export function buildServer() {
   const server = new McpServer({
     name: "epistech-ai-lab-mcp",
     version: "1.0.0",
   });
+
+  // Igual que server.registerTool, pero solo si la fuente está habilitada en este despliegue (ENABLED_VENDORS).
+  const registerForVendor = (vendor: string, ...args: Parameters<typeof server.registerTool>) => {
+    if (isVendorEnabled(vendor)) server.registerTool(...args);
+  };
 
   server.registerTool(
     "get_current_time",
@@ -281,7 +298,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "zabbix",
     "get_zabbix_alert_insight",
     {
       title: "Detalle e histórico de una alerta de Zabbix",
@@ -311,7 +329,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "zabbix",
     "get_zabbix_active_overview",
     {
       title: "Resumen de alertas activas de Zabbix",
@@ -348,7 +367,8 @@ export function buildServer() {
   // se pueden pedir notas, gráficas de interfaz o traceroute.
   // ------------------------------------------------------------------
 
-  server.registerTool(
+  registerForVendor(
+    "opmanager",
     "get_device_info",
     {
       title: "Info del dispositivo (OpManager)",
@@ -364,7 +384,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "opmanager",
     "get_alarm_properties",
     {
       title: "Propiedades/historial de la alarma (OpManager)",
@@ -380,7 +401,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "opmanager",
     "get_device_notes",
     {
       title: "Notas/customFields del dispositivo (OpManager)",
@@ -403,7 +425,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "opmanager",
     "get_interface_graphs",
     {
       title: "Gráficas de interfaz (OpManager)",
@@ -430,7 +453,8 @@ export function buildServer() {
     }
   );
 
-  server.registerTool(
+  registerForVendor(
+    "opmanager",
     "get_trace_response",
     {
       title: "Traceroute al dispositivo (OpManager)",
