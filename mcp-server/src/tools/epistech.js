@@ -35,7 +35,18 @@ async function getFromEpistech(path, { timeoutMs } = {}) {
     );
   }
 
-  const json = await res.json();
+  // Se lee como texto primero: una ruta que no existe en la versión desplegada de EPISTECH responde con la página
+  // HTML de error de Express, y res.json() fallaría con un "Unexpected token <" que no dice qué pasó.
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `EpistechBackend ${path} respondió ${res.status} con algo que no es JSON (${text.replace(/\s+/g, " ").slice(0, 80)}). ` +
+        `Si es un 404, esa ruta no existe en la versión de EPISTECH desplegada: falta actualizar y reconstruir el backend.`
+    );
+  }
 
   if (!res.ok) {
     throw new Error(`EpistechBackend ${path} respondió ${res.status}: ${JSON.stringify(json)}`);

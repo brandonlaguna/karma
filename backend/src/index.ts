@@ -293,6 +293,12 @@ nombre. Para comparar un equipo con otros usa sus "problemasEn7Dias" y
 "problemasEn30Dias" y el ranking de "get_zabbix_active_overview"; si la
 comparación no se puede hacer con esos datos, dilo.
 
+MUESTRAS: el listado de alertas de "get_zabbix_active_overview" es solo una
+muestra (las más graves). Para hablar de patrones, oleadas o antigüedad de
+TODAS las abiertas usa "porTipoDeAlerta" y "porAntiguedad"; nunca generalices
+al total lo que solo viste en el listado, y no afirmes fechas ni tipos de
+alertas que no aparezcan en los datos.
+
 ALCANCE DE LAS CIFRAS: aclara siempre si un número es de alertas críticas
 (Alta o Desastre) o de todas las severidades. "Los equipos con más alertas",
 sin más contexto, se refiere a TODAS las severidades.
