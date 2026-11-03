@@ -264,15 +264,38 @@ export function buildServer() {
   // ------------------------------------------------------------------
 
   server.registerTool(
+    "find_alert_by_alert_id",
+    {
+      title: "Buscar una alerta por el Alert ID que se ve en pantalla",
+      description:
+        "Resuelve el \"Alert ID\" que el usuario ve en la columna de la pantalla de Management (el número que genera el VENDOR: evento de Zabbix, alarma de OpManager, etc.) a la alerta de EPISTECH y a su FUENTE, deduciendo el vendor de la base de datos en vez de suponerlo. Úsala SIEMPRE que el usuario te dé un número de alerta y no tengas la certeza de su fuente o de que sea el id interno. Cada coincidencia trae el \"id\" interno, la fuente, el mensaje, la severidad y un \"siguientePaso\" con la herramienta que corresponde. IMPORTANTE: el mismo número puede existir en dos fuentes distintas (\"ambigua\": true): en ese caso NO elijas por tu cuenta, muestra las opciones con su fuente y pregunta de cuál se trata. Si no hay coincidencias, dilo tal cual, sin inventar.",
+      inputSchema: {
+        alertId: z
+          .union([z.string(), z.number()])
+          .describe('El "Alert ID" tal como lo ve el usuario en la pantalla de Management (número del vendor, NO el id interno)'),
+      },
+    },
+    async ({ alertId }) => {
+      const result = await epistech.findAlertByVendorId({ alertId });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.registerTool(
     "get_zabbix_alert_insight",
     {
       title: "Detalle e histórico de una alerta de Zabbix",
       description:
-        "Detalle enriquecido de UNA alerta de ZABBIX: (1) contexto EN VIVO -- equipo, disparador con su condición y notas, estado actual, otros problemas abiertos en el mismo equipo y estado del ping; (2) HISTÓRICO del disparador -- cuántas veces ocurrió en las últimas 24 h / 7 d / 30 d / 90 d, duración promedio, mediana y máxima, horarios y días más frecuentes, cuántas veces se recuperó en menos de 5 min (intermitencia), y qué otros problemas del mismo equipo coinciden en el tiempo (posible causa común). Úsala para \"¿por qué pasa esto?\", \"¿cuántas veces se ha repetido?\", \"¿cada cuándo?\", \"¿es recurrente o nuevo?\", \"dame más detalle\" y para analizar cualquier alerta de Zabbix. NO sirve para alertas de OpManager (para esas usa las tools de OpManager). Recibe el ID INTERNO de la alerta (alerts.id, el mismo que se usa en get_alert_by_id). Los datos son exactos: cítalos tal cual con su ventana y NO inventes causas que no se desprendan de ellos; si dice que el contexto no está disponible, dilo en vez de suponerlo. Si \"yaRecuperadaEnZabbix\" es true, la alerta ya se resolvió en Zabbix.",
+        "Detalle enriquecido de UNA alerta de ZABBIX: (1) contexto EN VIVO -- equipo, disparador con su condición y notas, estado actual, otros problemas abiertos en el mismo equipo y estado del ping; (2) HISTÓRICO del disparador -- cuántas veces ocurrió en las últimas 24 h / 7 d / 30 d / 90 d, duración promedio, mediana y máxima, horarios y días más frecuentes, cuántas veces se recuperó en menos de 5 min (intermitencia), y qué otros problemas del mismo equipo coinciden en el tiempo (posible causa común). Úsala para \"¿por qué pasa esto?\", \"¿cuántas veces se ha repetido?\", \"¿cada cuándo?\", \"¿es recurrente o nuevo?\", \"dame más detalle\" y para analizar cualquier alerta de Zabbix. NO sirve para alertas de OpManager (para esas usa las tools de OpManager). Identifica la alerta con EXACTAMENTE UNO de dos parámetros, sin mezclarlos: \"eventoZabbix\" si el usuario te da el \"Alert ID\" que ve en la pantalla de Management (es el número de evento de Zabbix, p. ej. 42558970), o \"alertId\" si tienes el ID INTERNO (alerts.id, el que trae el listado de get_zabbix_active_overview en el campo \"id\" y el que se usa en get_alert_by_id). Si dudas cuál es, pregúntale al usuario; confundirlos analiza OTRA alerta. Los datos son exactos: cítalos tal cual con su ventana y NO inventes causas que no se desprendan de ellos; si dice que el contexto no está disponible, dilo en vez de suponerlo. Si \"yaRecuperadaEnZabbix\" es true, la alerta ya se resolvió en Zabbix.",
       inputSchema: {
+        eventoZabbix: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe('El "Alert ID" que el usuario ve en la pantalla de Management (número de evento de Zabbix). Usa ESTE o alertId, no ambos.'),
         alertId: z
           .union([z.string(), z.number()])
-          .describe("ID interno de la alerta en Epistech (alerts.id -- NO el alert_id/evento de Zabbix)"),
+          .optional()
+          .describe("ID INTERNO de la alerta en Epistech (alerts.id; el campo \"id\" del listado de alertas activas). Usa ESTE o eventoZabbix, no ambos."),
         days: z
           .number()
           .int()
@@ -282,8 +305,8 @@ export function buildServer() {
           .describe("Ventana del histórico en días (default 90, máximo 365). Normalmente se omite."),
       },
     },
-    async ({ alertId, days }) => {
-      const result = await epistech.getZabbixAlertInsight({ alertId, days });
+    async ({ alertId, eventoZabbix, days }) => {
+      const result = await epistech.getZabbixAlertInsight({ alertId, eventoZabbix, days });
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     }
   );

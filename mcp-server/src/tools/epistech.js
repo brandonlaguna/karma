@@ -64,9 +64,22 @@ export async function getAlertById({ alertId }) {
  * Detalle enriquecido de una alerta de ZABBIX (contexto en vivo + histórico del disparador), calculado
  * por EpistechBackend (/api/insights/zabbix/alerts/:id). Recibe el id interno de la alerta (alerts.id).
  */
-export async function getZabbixAlertInsight({ alertId, days }) {
-  const query = days ? `?days=${encodeURIComponent(days)}` : "";
-  const json = await getFromEpistech(`/api/insights/zabbix/alerts/${encodeURIComponent(alertId)}${query}`, { timeoutMs: 45000 });
+export async function getZabbixAlertInsight({ alertId, eventoZabbix, days }) {
+  // Dos formas de identificar la alerta, NUNCA mezcladas: el id interno (alerts.id) o el "Alert ID" que el usuario
+  // ve en pantalla (evento de Zabbix). Confundirlos analizaría otra alerta, por eso van por parámetros distintos.
+  const hasEvent = eventoZabbix !== undefined && eventoZabbix !== null && String(eventoZabbix).trim() !== "";
+  const hasInternal = alertId !== undefined && alertId !== null && String(alertId).trim() !== "";
+  if (hasEvent === hasInternal) {
+    throw new Error('Indica exactamente UNO: "alertId" (id interno) o "eventoZabbix" (el Alert ID que se ve en pantalla).');
+  }
+
+  const params = new URLSearchParams();
+  if (days) params.set("days", String(days));
+  if (hasEvent) params.set("by", "event");
+  const query = params.toString() ? `?${params}` : "";
+  const id = hasEvent ? eventoZabbix : alertId;
+
+  const json = await getFromEpistech(`/api/insights/zabbix/alerts/${encodeURIComponent(String(id).trim())}${query}`, { timeoutMs: 45000 });
   return json?.response ?? json;
 }
 
@@ -78,4 +91,26 @@ export async function getZabbixActiveOverview({ limit, minSeverity }) {
   const query = params.toString() ? `?${params}` : "";
   const json = await getFromEpistech(`/api/insights/zabbix/active${query}`, { timeoutMs: 45000 });
   return json?.response ?? json;
+}
+
+/**
+ * Resuelve el "Alert ID" que el usuario ve en pantalla (el número que genera el vendor) a la alerta de EPISTECH y
+ * su FUENTE, deduciendo el vendor de la tabla en vez de suponerlo. Si el mismo número existe en varias fuentes,
+ * devuelve todas las coincidencias para que se pregunte de cuál se trata.
+ */
+export async function findAlertByVendorId({ alertId }) {
+  const json = await getFromEpistech(`/api/insights/alerts/lookup/${encodeURIComponent(String(alertId).trim())}`, { timeoutMs: 15000 });
+  const result = json?.response ?? json;
+
+  // Siguiente paso según la fuente: cada vendor se investiga con tools distintas.
+  const nextStep = (match) => {
+    const source = String(match.fuente ?? "").toLowerCase();
+    if (source.includes("zabbix")) return `Usa get_zabbix_alert_insight con alertId=${match.id} (ID interno).`;
+    if (source.includes("opmanager") || source.includes("manage engine")) {
+      return `Usa get_alert_by_id con alertId=${match.id} (ID interno) y con su json_result las tools de OpManager.`;
+    }
+    return `Usa get_alert_by_id con alertId=${match.id} (ID interno) para ver su detalle.`;
+  };
+
+  return { ...result, coincidencias: (result.coincidencias ?? []).map((match) => ({ ...match, siguientePaso: nextStep(match) })) };
 }
