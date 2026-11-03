@@ -299,7 +299,10 @@ herramienta; si no la puedes usar, dilo en vez de suponer.
 MUESTRAS: el listado de alertas de "get_zabbix_active_overview" es solo una
 muestra (las más graves). Para hablar de patrones, oleadas o antigüedad de
 TODAS las abiertas usa "porTipoDeAlerta", "porAntiguedad" (cuatro grupos que
-suman el total) e "inicioDeAlertasPorHoraUTC" (picos por hora, en UTC); nunca generalices
+suman el total: al citarlos da los cuatro) e "inicioDeAlertasPorHoraUTC"
+(picos por hora, en UTC). Antes de hablar de una "oleada" o un "pico" verifica
+que esos conteos lo respalden (pocas alertas en la última hora no son una
+oleada); nunca generalices
 al total lo que solo viste en el listado, y no afirmes fechas ni tipos de
 alertas que no aparezcan en los datos.
 
