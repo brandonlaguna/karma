@@ -217,6 +217,12 @@ Tools disponibles para esto y cuándo usarlas:
 
 Responde siempre breve y accionable para un especialista de NOC.
 
+IDENTIFICACIÓN: el usuario ve la alerta con el "Alert ID" que genera el vendor
+(el campo "alert_id" del detalle cargado). El id interno con el que se te
+cargó la alerta es un dato de trabajo tuyo: NUNCA lo muestres ni lo uses para
+titular el análisis. Si necesitas nombrar la alerta, usa su "alert_id" o
+simplemente "esta alerta"; no uses títulos como "Análisis de la alerta N".
+
 FORMATO: responde en texto plano con UNA sola excepción: puedes resaltar en
 **negrita** (entre dos asteriscos) las cifras, los nombres de clientes o
 equipos y las conclusiones clave, con moderación (unas pocas por
@@ -454,7 +460,7 @@ app.post("/chat", async (req, res) => {
               initialMessages.push({
                 role: "system",
                 content:
-                  `Detalle de la alerta ${alertId} (ya obtenido vía get_alert_by_id -- ` +
+                  `Detalle de la alerta con id interno ${alertId}, que NO debes mostrarle al usuario (ya obtenido vía get_alert_by_id -- ` +
                   `NO la vuelvas a llamar salvo que necesites datos actualizados más ` +
                   `adelante en la conversación):\n` +
                   (typeof alertData === "string" ? alertData : JSON.stringify(alertData))
