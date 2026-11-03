@@ -134,3 +134,17 @@ export async function findZabbixHost({ name }) {
   const json = await getFromEpistech(`/api/insights/zabbix/hosts?name=${encodeURIComponent(String(name ?? "").trim())}`, { timeoutMs: 45000 });
   return json?.response ?? json;
 }
+
+/**
+ * Ranking de equipos de clientes por problemas en un período (/api/insights/zabbix/noisiest). Con "equipo" indica la
+ * posición de ese equipo frente al resto. La primera consulta recorre todos los equipos, por eso el plazo es largo.
+ */
+export async function getZabbixNoisiestHosts({ days, limit, equipo }) {
+  const params = new URLSearchParams();
+  if (days != null) params.set("days", String(days));
+  if (limit != null) params.set("limit", String(limit));
+  if (equipo) params.set("equipo", String(equipo).trim());
+  const query = params.toString() ? `?${params}` : "";
+  const json = await getFromEpistech(`/api/insights/zabbix/noisiest${query}`, { timeoutMs: 90000 });
+  return json?.response ?? json;
+}

@@ -355,7 +355,7 @@ export function buildServer() {
     {
       title: "Resumen de alertas activas de Zabbix",
       description:
-        "Resumen de las alertas ACTIVAS (abiertas) de Zabbix: total, conteo por severidad, POR CLIENTE (\"porCliente\": es el dato a usar cuando pregunten por clientes; \"Sin cliente asignado\" son equipos cuyo grupo no está registrado como cliente), por grupo de equipos de Zabbix (secundario, puede incluir grupos genéricos), por equipo, y el listado de las más graves con su id interno y su cliente. Úsala para \"¿qué alertas hay activas ahora?\", \"¿cuántas críticas hay?\", \"¿qué cliente tiene más alertas?\", \"¿qué equipos son los más ruidosos?\". Cada alerta se VERIFICA contra Zabbix: solo cuenta como activa si Zabbix confirma que sigue abierta. EPISTECH puede conservar abiertas alertas que en Zabbix ya se recuperaron o ya no existen; esas NO se cuentan y se informan en \"excluidas\" (cítalas aparte si el usuario pregunta por diferencias de cifras). Para solo las graves usa minSeverity=4 (4 = Alta, 5 = Desastre). También trae \"porTipoDeAlerta\" (qué problemas predominan, por su texto) y \"porAntiguedad\" (cuánto llevan abiertas), calculados sobre TODAS las alertas abiertas: úsalos para hablar de patrones u \"oleadas\". El listado detallado (\"alertas\") cubre solo las más graves hasta el límite: NUNCA extrapoles de él al total ni afirmes fechas o tipos de las que no aparecen ahí. Para profundizar en una alerta del listado usa get_zabbix_alert_insight con su \"id\".",
+        "Resumen de las alertas ACTIVAS (abiertas) de Zabbix: total, conteo por severidad, POR CLIENTE (\"porCliente\": es el dato a usar cuando pregunten por clientes; \"Sin cliente asignado\" son equipos cuyo grupo no está registrado como cliente), por grupo de equipos de Zabbix (secundario, puede incluir grupos genéricos), por equipo, y el listado de las más graves con su id interno y su cliente. Úsala para \"¿qué alertas hay activas ahora?\", \"¿cuántas críticas hay?\", \"¿qué cliente tiene más alertas?\", \"¿qué equipos son los más ruidosos?\". Cada alerta se VERIFICA contra Zabbix: solo cuenta como activa si Zabbix confirma que sigue abierta. EPISTECH puede conservar abiertas alertas que en Zabbix ya se recuperaron o ya no existen; esas NO se cuentan y se informan en \"excluidas\" (cítalas aparte si el usuario pregunta por diferencias de cifras). Para solo las graves usa minSeverity=4 (4 = Alta, 5 = Desastre). También trae \"porTipoDeAlerta\" (qué problemas predominan, por su texto), \"porAntiguedad\" (cuánto llevan abiertas, en cuatro grupos que NO se superponen y suman el total) e \"inicioDeAlertasPorHoraUTC\" (cuántas empezaron en cada hora de las últimas 24, en UTC), calculados sobre TODAS las alertas abiertas: úsalos para hablar de patrones, picos u \"oleadas\". Para comparar un equipo con los demás usa get_zabbix_noisiest_hosts. El listado detallado (\"alertas\") cubre solo las más graves hasta el límite: NUNCA extrapoles de él al total ni afirmes fechas o tipos de las que no aparecen ahí. Para profundizar en una alerta del listado usa get_zabbix_alert_insight con su \"id\".",
       inputSchema: {
         minSeverity: z
           .number()
@@ -375,6 +375,41 @@ export function buildServer() {
     },
     async ({ minSeverity, limit }) => {
       const result = await epistech.getZabbixActiveOverview({ minSeverity, limit });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  );
+
+  registerForVendor(
+    "zabbix",
+    "get_zabbix_noisiest_hosts",
+    {
+      title: "Ranking de equipos de Zabbix por ruido",
+      description:
+        "Ranking de los equipos de CLIENTES de Zabbix por cantidad de problemas (abiertos o ya recuperados) en un período, con el promedio, la mediana, el percentil 90 y el máximo de todos los equipos. Con \"equipo\" indica además en qué POSICIÓN queda ese equipo frente al resto (\"posicion\" de \"de\", cuántas veces la mediana, y a qué porcentaje de equipos supera). Es la herramienta para \"¿es normal que RTR-X tenga tantas alertas?\", \"compáralo con otros equipos\", \"¿cuáles son los equipos más ruidosos?\" o \"¿hay otros equipos igual de ruidosos?\": responde con la posición real, no con una suposición. Distinta de get_zabbix_active_overview, que solo cuenta las alertas ABIERTAS ahora; esta cuenta todos los problemas del período. Si pasas \"equipo\", usa el nombre exacto que te confirmó find_zabbix_host; con un nombre ambiguo no calcula la posición y lo avisa. Los datos son exactos: cítalos con su período y NO inventes una causa de por qué un equipo es más ruidoso.",
+      inputSchema: {
+        equipo: z
+          .string()
+          .min(2)
+          .optional()
+          .describe('Nombre exacto del equipo cuya posición se quiere conocer (p. ej. "RTR-Cartago"). Se omite para solo ver el top.'),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(30)
+          .optional()
+          .describe("Período en días (default 7, máximo 30)."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(30)
+          .optional()
+          .describe("Cuántos equipos listar en el top (default 10, máximo 30)."),
+      },
+    },
+    async ({ equipo, days, limit }) => {
+      const result = await epistech.getZabbixNoisiestHosts({ equipo, days, limit });
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     }
   );
