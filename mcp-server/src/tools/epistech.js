@@ -114,3 +114,12 @@ export async function findAlertByVendorId({ alertId }) {
 
   return { ...result, coincidencias: (result.coincidencias ?? []).map((match) => ({ ...match, siguientePaso: nextStep(match) })) };
 }
+
+/**
+ * Busca equipos de Zabbix por nombre (/api/insights/zabbix/hosts). Distingue la coincidencia EXACTA de los nombres
+ * parecidos y marca como ambigua la consulta que no se puede resolver, para preguntar en vez de adivinar.
+ */
+export async function findZabbixHost({ name }) {
+  const json = await getFromEpistech(`/api/insights/zabbix/hosts?name=${encodeURIComponent(String(name ?? "").trim())}`, { timeoutMs: 45000 });
+  return json?.response ?? json;
+}

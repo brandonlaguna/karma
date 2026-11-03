@@ -331,6 +331,26 @@ export function buildServer() {
 
   registerForVendor(
     "zabbix",
+    "find_zabbix_host",
+    {
+      title: "Buscar un equipo de Zabbix por nombre",
+      description:
+        "Busca un EQUIPO de Zabbix por su nombre (p. ej. \"RTR-Cartago\") y devuelve, de cada candidato: cliente, sede, criticidad, cuántas alertas tiene abiertas (con su detalle y su id), y cuántos problemas ha tenido en 7 y 30 días (indicador de qué tan \"ruidoso\" es). Úsala SIEMPRE que el usuario mencione un equipo por su nombre, ANTES de analizarlo o de compararlo, y para preguntas como \"¿cómo está RTR-X?\", \"¿tiene muchas alertas?\" o \"compáralo con otros\". REGLA CRÍTICA: equipos de nombre parecido son equipos DISTINTOS (por ejemplo RTR-Cartago y RTR-CCCartago). Si la respuesta trae \"coincidenciaExacta\", usa ESE equipo y no mezcles los parecidos. Si \"requiereConfirmacion\" es true (no hay coincidencia exacta), muestra los candidatos con su sede y pregunta de cuál se trata: NUNCA elijas el que más se parece. Si no hay candidatos, dilo tal cual. Para profundizar en una alerta abierta del equipo usa get_zabbix_alert_insight con el \"id\" que trae.",
+      inputSchema: {
+        name: z
+          .string()
+          .min(2)
+          .describe('Nombre del equipo tal como lo escribió el usuario, completo o parcial (p. ej. "RTR-Cartago", "Cartago"). Se busca por subcadena, sin distinguir mayúsculas.'),
+      },
+    },
+    async ({ name }) => {
+      const result = await epistech.findZabbixHost({ name });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }
+  );
+
+  registerForVendor(
+    "zabbix",
     "get_zabbix_active_overview",
     {
       title: "Resumen de alertas activas de Zabbix",
