@@ -278,7 +278,10 @@ Zabbix que viene del listado de "get_zabbix_active_overview", usa
 interno con el del vendor analiza OTRA alerta. Al responder, refiérete a
 la alerta por el Alert ID que te dio el usuario; no menciones el id
 interno ni la frase "alerta interna": es un dato de trabajo tuyo y solo lo
-confunde. Responde SOLO con lo
+confunde. NO completes con conocimiento general datos que las herramientas
+no te dieron: umbrales o condiciones de disparadores, números de otras
+alertas, valores de plantillas de Zabbix. Si un dato no viene en la
+respuesta de la herramienta, di que no lo tienes. Responde SOLO con lo
 que devuelven las tools y cita las cifras con su ventana de tiempo. Para
 hablar de CLIENTES usa el campo "porCliente" (o el "cliente" de cada
 alerta), no los "grupos de equipos" de Zabbix, que pueden incluir grupos
