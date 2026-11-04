@@ -42,6 +42,19 @@ export function buildServer() {
     if (isVendorEnabled(vendor)) server.registerTool(...args);
   };
 
+  // Con más de una fuente activa (Atento: OpManager + Zabbix) el resultado de un resumen o ranking lleva escrita su fuente
+  // y su alcance: el modelo ignoraba la regla del prompt y presentaba la cifra de Zabbix como total del monitoreo. Con una
+  // sola fuente (Fusionet) la respuesta no cambia.
+  const withSourceScope = <T>(source: string, others: string, result: T): T | (Record<string, unknown> & T) => {
+    const multiSource = isVendorEnabled("zabbix") && isVendorEnabled("opmanager");
+    if (!multiSource || !result || typeof result !== "object" || Array.isArray(result)) return result;
+    return {
+      fuente: source,
+      alcance: `Estas cifras son SOLO de ${source}. No incluyen ${others}. Al responder, di siempre "en ${source} hay…" y aclara que lo de ${others} no está incluido.`,
+      ...result,
+    };
+  };
+
   server.registerTool(
     "get_current_time",
     {
@@ -375,7 +388,7 @@ export function buildServer() {
     },
     async ({ minSeverity, limit }) => {
       const result = await epistech.getZabbixActiveOverview({ minSeverity, limit });
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      return { content: [{ type: "text", text: JSON.stringify(withSourceScope("Zabbix", "OpManager", result)) }] };
     }
   );
 
@@ -410,7 +423,7 @@ export function buildServer() {
     },
     async ({ equipo, days, limit }) => {
       const result = await epistech.getZabbixNoisiestHosts({ equipo, days, limit });
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      return { content: [{ type: "text", text: JSON.stringify(withSourceScope("Zabbix", "OpManager", result)) }] };
     }
   );
 
