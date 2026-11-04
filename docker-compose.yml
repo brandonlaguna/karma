@@ -153,6 +153,8 @@ services:
       # deploy puede necesitar un modelo distinto según la RAM
       # disponible para Ollama en ese host (ver LOCAL_MODEL en .env).
       LOCAL_MODEL: ${LOCAL_MODEL}
+      # Fuentes cuyos prompts se arman (zabbix, opmanager; vacío = todas): el mismo valor que usa el mcp-server
+      ENABLED_VENDORS: ${ENABLED_VENDORS}
 
       POSTGRES_HOST: postgresql
       POSTGRES_PORT: ${POSTGRES_PORT}
