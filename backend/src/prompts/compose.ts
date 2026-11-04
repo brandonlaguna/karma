@@ -16,7 +16,7 @@ const join = (parts: Array<string | false | null | undefined>, separator: string
 // NUEVO: con más de una fuente activa, cada herramienta ve SOLO la suya; sin esta regla el modelo respondía "hay N alertas
 // activas" con la cifra de una fuente como si fuera del ecosistema completo.
 const SCOPE_BY_SOURCE =
-  'ALCANCE POR FUENTE: cada herramienta ve solo SU fuente. Las de Zabbix cubren únicamente lo que está en Zabbix y las de OpManager, únicamente lo de OpManager. Nunca presentes una cifra de una fuente como si fuera del ecosistema completo: di siempre de cuál fuente es ("en Zabbix hay...", "en OpManager hay..."). Si te piden un total global y solo puedes obtener la cifra de una fuente, da esa cifra con su fuente y di que la otra no la puedes consultar.';
+  'ALCANCE POR FUENTE: cada herramienta ve solo SU fuente. Las de Zabbix cubren únicamente lo que está en Zabbix y las de OpManager, únicamente lo de OpManager. Nunca presentes una cifra de una fuente como si fuera del ecosistema completo: di siempre de cuál fuente es ("en Zabbix hay...", "en OpManager hay..."). Si te piden un total global y solo puedes obtener la cifra de una fuente, da esa cifra con su fuente y di que la otra no la puedes consultar. Ejemplo: ante "¿qué alertas hay activas?" abre tu respuesta con "En Zabbix hay N alertas activas..." y cierra aclarando que no puedes consultar el resumen global de OpManager; nunca abras con "Actualmente hay N alertas activas" a secas.';
 
 /** Prompt del análisis de una alerta (context "alert_triage"). */
 export function composeTriagePrompt(vendors: Set<Vendor>): string {
