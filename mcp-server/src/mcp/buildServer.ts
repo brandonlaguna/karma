@@ -393,6 +393,33 @@ export function buildServer() {
   );
 
   registerForVendor(
+    "opmanager",
+    "get_opmanager_active_overview",
+    {
+      title: "Resumen de alertas activas de OpManager",
+      description:
+        "Resumen de las alertas ABIERTAS de OpManager: total, conteo por severidad, POR PAÍS (\"porPais\"), POR PROBE (\"porProbe\"), por sede, por área, por criticidad del equipo, por tipo de alerta, por equipo, y el listado de las más recientes con su id interno. Úsala para \"¿qué alertas hay activas en OpManager?\", \"¿qué probe o país tiene más alertas?\", \"¿cuántas alertas hay en Perú?\", \"¿qué equipos tienen más alertas?\", \"¿qué tipo de alerta predomina?\". Para acotar a un lugar usa los filtros pais, probe, sede o area (por ejemplo pais=\"Perú\"): los totales y los rankings se calculan solo sobre ese lugar. \"Sin dato\" agrupa las alertas cuyo equipo no tiene ese campo diligenciado en OpManager (no es un lugar real): dilo así, sin inventar a quién pertenecen. También trae \"porTipoDeAlerta\" (familias como equipo sin respuesta, utilización de interfaz, respaldos NCM), \"porAntiguedad\" (cuánto llevan abiertas, en cuatro grupos que NO se superponen y suman el total) e \"inicioDeAlertasPorHoraUTC\", calculados sobre TODAS las abiertas: úsalos para hablar de patrones, picos o antigüedad. IMPORTANTE: el estado \"abierta\" es el que tiene EPISTECH y no se verifica en vivo contra OpManager (lee \"fuenteDelEstado\"): si casi todas llevan más de 7 días, avisa que puede haber alertas ya restablecidas que EPISTECH no ha cerrado. El listado detallado (\"alertas\") cubre solo las más recientes hasta el límite: NUNCA extrapoles de él al total. Para profundizar en una alerta usa get_alert_by_id con su \"id\" y las herramientas de OpManager.",
+      inputSchema: {
+        pais: z.string().min(2).optional().describe('Solo alertas de ese país (subcadena, sin importar mayúsculas ni tildes), p. ej. "Perú" o "colombia".'),
+        probe: z.string().min(2).optional().describe('Solo alertas de ese probe (subcadena), p. ej. "Probe Colombia" o "Azure".'),
+        sede: z.string().min(2).optional().describe('Solo alertas de esa sede (subcadena), p. ej. "La Molina".'),
+        area: z.string().min(2).optional().describe('Solo alertas de esa área (subcadena), p. ej. "REDES" o "SERVIDORES".'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Cuántas alertas listar, de las más recientes hacia atrás (default 20, máximo 100)."),
+      },
+    },
+    async ({ pais, probe, sede, area, limit }) => {
+      const result = await epistech.getOpmanagerActiveOverview({ pais, probe, sede, area, limit });
+      return { content: [{ type: "text", text: JSON.stringify(withSourceScope("OpManager", "Zabbix", result)) }] };
+    }
+  );
+
+  registerForVendor(
     "zabbix",
     "get_zabbix_noisiest_hosts",
     {

@@ -105,6 +105,22 @@ export async function getZabbixActiveOverview({ limit, minSeverity }) {
 }
 
 /**
+ * Resumen de las alertas ABIERTAS de OpManager (por país, probe, sede, área, criticidad, tipo y equipo), calculado por
+ * EpistechBackend (/api/insights/opmanager/active) a partir de los datos del equipo que guarda la ingesta. Los filtros
+ * son subcadenas, sin importar mayúsculas ni tildes.
+ */
+export async function getOpmanagerActiveOverview({ limit, pais, probe, sede, area }) {
+  const params = new URLSearchParams();
+  if (limit != null) params.set("limit", String(limit));
+  for (const [key, value] of Object.entries({ pais, probe, sede, area })) {
+    if (value != null && String(value).trim() !== "") params.set(key, String(value).trim());
+  }
+  const query = params.toString() ? `?${params}` : "";
+  const json = await getFromEpistech(`/api/insights/opmanager/active${query}`, { timeoutMs: 45000 });
+  return json?.response ?? json;
+}
+
+/**
  * Resuelve el "Alert ID" que el usuario ve en pantalla (el número que genera el vendor) a la alerta de EPISTECH y
  * su FUENTE, deduciendo el vendor de la tabla en vez de suponerlo. Si el mismo número existe en varias fuentes,
  * devuelve todas las coincidencias para que se pregunte de cuál se trata.
