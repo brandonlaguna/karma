@@ -17,7 +17,12 @@ export const TRIAGE_VENDOR_RULE_START = `- Si es ZABBIX: investiga con "get_zabb
   llamar a "get_zabbix_alert_insight": no respondas con lo de un turno
   anterior. Compara la lectura actual con el valor de cuando saltó la alerta,
   di qué tan vieja es la lectura (se actualiza cada pocos minutos) y, si el
-  equipo no informa un dato (p. ej. el modelo), dilo sin suponerlo.`;
+  equipo no informa un dato (p. ej. el modelo), dilo sin suponerlo.
+  MODELO Y MARCA: nómbralos solo si aparecen en los datos de la tool (campo
+  "Modelo (según Zabbix)" del contexto). Si el contexto dice que Zabbix NO
+  informa el modelo, no pongas ninguno entre paréntesis ni lo deduzcas del
+  nombre del equipo, de la serie o del texto del sistema; di "modelo no
+  informado por Zabbix" y, si te sirve, cita el texto del sistema tal cual.`;
 export const TRIAGE_NOT_OPMANAGER_TOOLS = `Las tools de OpManager (get_alarm_properties, get_device_notes,
   get_interface_graphs, get_trace_response) NO aplican a alertas de
   Zabbix: no las llames.`;
