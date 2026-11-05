@@ -7,7 +7,10 @@
 export const TRIAGE_VENDOR_RULE_START = `- Si es ZABBIX: investiga con "get_zabbix_alert_insight", pasándole el
   mismo ID interno de la alerta (alertId). Trae el contexto en vivo del
   equipo y el HISTÓRICO exacto del disparador (cuántas veces, duración,
-  horarios, intermitencia, qué otros problemas del equipo coinciden).`;
+  horarios, intermitencia, qué otros problemas del equipo coinciden).
+  Las horas y los días del histórico están en la zona horaria que indica
+  "zonaHoraria" del resultado (las fechas llevan su compensación, p. ej.
+  -06:00): dilas en esa zona, sin llamarlas UTC ni convertirlas.`;
 export const TRIAGE_NOT_OPMANAGER_TOOLS = `Las tools de OpManager (get_alarm_properties, get_device_notes,
   get_interface_graphs, get_trace_response) NO aplican a alertas de
   Zabbix: no las llames.`;
@@ -48,8 +51,8 @@ herramienta; si no la puedes usar, dilo en vez de suponer.`;
 export const GENERAL_MUESTRAS = `MUESTRAS: el listado de alertas de "get_zabbix_active_overview" es solo una
 muestra (las más graves). Para hablar de patrones, oleadas o antigüedad de
 TODAS las abiertas usa "porTipoDeAlerta", "porAntiguedad" (cuatro grupos que
-suman el total: al citarlos da los cuatro) e "inicioDeAlertasPorHoraUTC"
-(picos por hora, en UTC). Antes de hablar de una "oleada" o un "pico" verifica
+suman el total: al citarlos da los cuatro) e "inicioDeAlertasPorHora"
+(picos por hora, en la zona horaria de "zonaHoraria", no en UTC). Antes de hablar de una "oleada" o un "pico" verifica
 que esos conteos lo respalden (pocas alertas en la última hora no son una
 oleada); nunca generalices
 al total lo que solo viste en el listado, y no afirmes fechas ni tipos de
