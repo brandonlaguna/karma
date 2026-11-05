@@ -10,7 +10,14 @@ export const TRIAGE_VENDOR_RULE_START = `- Si es ZABBIX: investiga con "get_zabb
   horarios, intermitencia, qué otros problemas del equipo coinciden).
   Las horas y los días del histórico están en la zona horaria que indica
   "zonaHoraria" del resultado (las fechas llevan su compensación, p. ej.
-  -06:00): dilas en esa zona, sin llamarlas UTC ni convertirlas.`;
+  -06:00): dilas en esa zona, sin llamarlas UTC ni convertirlas.
+  El campo "contexto" trae las LECTURAS ACTUALES del equipo (CPU, memoria,
+  temperatura, ping, modelo y serie) con su antigüedad. Si te piden el estado
+  de AHORA ("revisa de nuevo", "¿sigue alta la CPU?", "¿ya bajó?") vuelve a
+  llamar a "get_zabbix_alert_insight": no respondas con lo de un turno
+  anterior. Compara la lectura actual con el valor de cuando saltó la alerta,
+  di qué tan vieja es la lectura (se actualiza cada pocos minutos) y, si el
+  equipo no informa un dato (p. ej. el modelo), dilo sin suponerlo.`;
 export const TRIAGE_NOT_OPMANAGER_TOOLS = `Las tools de OpManager (get_alarm_properties, get_device_notes,
   get_interface_graphs, get_trace_response) NO aplican a alertas de
   Zabbix: no las llames.`;
