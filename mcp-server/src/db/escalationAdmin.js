@@ -7,17 +7,10 @@ export class HttpError extends Error {
   }
 }
 
-// El Excel de origen trae saltos de línea y prefijos sueltos ("++57", "+57 3");
-// se limpia lo seguro (formato) sin adivinar números.
-export function normalizePhone(phone) {
-  if (phone == null) return null;
-  const cleaned = phone
-    .replace(/\s*[\r\n]+\s*/g, " / ")
-    .replace(/\s+/g, " ")
-    .replace(/^\+\+/, "+")
-    .trim();
-  return cleaned || null;
-}
+import { normalizePhone } from "./phone.js";
+
+// Se reexporta: otros módulos ya lo importan desde aquí.
+export { normalizePhone };
 
 async function withTransaction(work) {
   const client = await pool.connect();
@@ -34,7 +27,7 @@ async function withTransaction(work) {
   }
 }
 
-async function audit(client, actor, action, entity, entityId, payload) {
+export async function audit(client, actor, action, entity, entityId, payload) {
   await client.query(
     `INSERT INTO escalation_audit_log (actor_id, actor_name, authenticated, action, entity, entity_id, payload)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -117,8 +110,13 @@ export function upsertCountry({ isoCode, name }, actor) {
   });
 }
 
-export function upsertTeam({ countryCode, name, resolverGroupCode, siteCode, description }, actor) {
-  return withTransaction(async (client) => {
+export function upsertTeam(input, actor) {
+  return withTransaction((client) => upsertTeamOn(client, input, actor));
+}
+
+// Variante que trabaja sobre una conexión/transacción ya abierta: la usa la importación masiva para meter todo en una sola.
+export function upsertTeamOn(client, { countryCode, name, resolverGroupCode, siteCode, description }, actor) {
+  return (async () => {
     const country = await findCountry(client, countryCode);
     const { rows } = await client.query(
       `INSERT INTO teams (name, country_id, resolver_group_code, site_code, description)
@@ -132,7 +130,7 @@ export function upsertTeam({ countryCode, name, resolverGroupCode, siteCode, des
     );
     await audit(client, actor, "upsert", "team", rows[0].id, { countryCode, name, resolverGroupCode, siteCode, description });
     return { ...rows[0], country_code: country.iso_code };
-  });
+  })();
 }
 
 export function upsertLevel({ levelNumber, name, triggerDescription, responseSlaMinutes, resolutionSlaMinutes }, actor) {
@@ -154,9 +152,14 @@ export function upsertLevel({ levelNumber, name, triggerDescription, responseSla
 }
 
 export function createAssignment(input, actor) {
+  return withTransaction((client) => createAssignmentOn(client, input, actor));
+}
+
+// Variante que trabaja sobre una conexión/transacción ya abierta (ver upsertTeamOn).
+export function createAssignmentOn(client, input, actor) {
   const { countryCode, levelNumber, raciRole, contact, schedule, responseTime, description, replace } = input;
 
-  return withTransaction(async (client) => {
+  return (async () => {
     const country = await findCountry(client, countryCode);
     const team = await findTeam(client, country, input);
 
@@ -199,7 +202,7 @@ export function createAssignment(input, actor) {
     const assignmentId = rows[0].id;
     await audit(client, actor, "upsert", "assignment", assignmentId, { ...input, contactId, teamId: team.id, replaced });
     return { assignmentId, contactId, teamId: team.id, countryCode: country.iso_code, levelNumber, replaced: replaced.length };
-  });
+  })();
 }
 
 export function deleteAssignment(id, actor) {
@@ -208,5 +211,177 @@ export function deleteAssignment(id, actor) {
     if (!rows[0]) throw new HttpError(404, `No existe la asignación ${id}`);
     await audit(client, actor, "delete", "assignment", id, rows[0]);
     return { deleted: id };
+  });
+}
+
+const asignaciones = (n) => `${n} ${n === 1 ? "asignación" : "asignaciones"} RACI`;
+
+// En las actualizaciones parciales, un campo que NO viene se conserva y uno que viene en null se borra.
+const pick = (input, key, current) => (Object.prototype.hasOwnProperty.call(input, key) ? input[key] : current);
+
+/**
+ * Edita una asignación existente: su nivel, rol, equipo, contacto (uno ya existente por contactId, o uno nuevo/por
+ * correo con `contact`), horario, tiempo de respuesta y descripción. Si cambia el equipo, el país pasa a ser el del equipo.
+ * Una combinación nivel + país + equipo + contacto + rol que ya existe se rechaza (409 por el índice único).
+ */
+export function updateAssignment(id, input, actor) {
+  return withTransaction(async (client) => {
+    const current = (await client.query("SELECT * FROM escalation_raci WHERE id = $1", [id])).rows[0];
+    if (!current) throw new HttpError(404, `No existe la asignación ${id}`);
+
+    let levelId = current.escalation_level_id;
+    if (input.levelNumber !== undefined) {
+      const level = (await client.query("SELECT id FROM escalation_levels WHERE level_number = $1", [input.levelNumber])).rows[0];
+      if (!level) throw new HttpError(404, `El nivel ${input.levelNumber} no existe`);
+      levelId = level.id;
+    }
+
+    let teamId = current.team_id;
+    let countryId = current.country_id;
+    if (input.teamId !== undefined) {
+      const team = (await client.query("SELECT id, country_id FROM teams WHERE id = $1", [input.teamId])).rows[0];
+      if (!team) throw new HttpError(404, `No existe el equipo ${input.teamId}`);
+      teamId = team.id;
+      countryId = team.country_id ?? countryId;
+    }
+
+    let contactId = current.contact_id;
+    if (input.contactId !== undefined) {
+      const contact = (await client.query("SELECT id FROM contacts WHERE id = $1", [input.contactId])).rows[0];
+      if (!contact) throw new HttpError(404, `No existe el contacto ${input.contactId}`);
+      contactId = contact.id;
+    } else if (input.contact) {
+      contactId = await upsertContact(client, input.contact);
+    }
+
+    const { rows } = await client.query(
+      `UPDATE escalation_raci
+       SET escalation_level_id = $2, country_id = $3, team_id = $4, contact_id = $5, raci_role = $6,
+           description = $7, schedule = $8, response_time = $9
+       WHERE id = $1
+       RETURNING *`,
+      [
+        id,
+        levelId,
+        countryId,
+        teamId,
+        contactId,
+        input.raciRole ?? current.raci_role,
+        pick(input, "description", current.description),
+        pick(input, "schedule", current.schedule),
+        pick(input, "responseTime", current.response_time),
+      ]
+    );
+    await audit(client, actor, "update", "assignment", id, { before: current, after: rows[0] });
+    return { assignmentId: id };
+  });
+}
+
+/** Edita un equipo por su id: nombre, país, grupo resolutor, sede y descripción (null borra el valor). */
+export function updateTeam(id, input, actor) {
+  return withTransaction(async (client) => {
+    const current = (await client.query("SELECT * FROM teams WHERE id = $1", [id])).rows[0];
+    if (!current) throw new HttpError(404, `No existe el equipo ${id}`);
+
+    let countryId = current.country_id;
+    if (input.countryCode) countryId = (await findCountry(client, input.countryCode)).id;
+
+    const { rows } = await client.query(
+      `UPDATE teams SET name = $2, country_id = $3, resolver_group_code = $4, site_code = $5, description = $6
+       WHERE id = $1
+       RETURNING id, name, resolver_group_code, site_code, description`,
+      [
+        id,
+        input.name ?? current.name,
+        countryId,
+        pick(input, "resolverGroupCode", current.resolver_group_code),
+        pick(input, "siteCode", current.site_code),
+        pick(input, "description", current.description),
+      ]
+    );
+    await audit(client, actor, "update", "team", id, { before: current, after: rows[0] });
+    return rows[0];
+  });
+}
+
+/** Un equipo con asignaciones no se borra: dejaría la matriz sin saber a quién escalar para ese equipo. */
+export function deleteTeam(id, actor) {
+  return withTransaction(async (client) => {
+    const used = (await client.query("SELECT count(*)::int AS n FROM escalation_raci WHERE team_id = $1", [id])).rows[0].n;
+    if (used > 0) throw new HttpError(409, `El equipo tiene ${asignaciones(used)}: elimínalas o muévelas antes de borrarlo`);
+    const { rows } = await client.query("DELETE FROM teams WHERE id = $1 RETURNING *", [id]);
+    if (!rows[0]) throw new HttpError(404, `No existe el equipo ${id}`);
+    await audit(client, actor, "delete", "team", id, rows[0]);
+    return { deleted: id };
+  });
+}
+
+/** Edita un contacto: nombre, correo, teléfono y si está activo. */
+export function updateContact(id, input, actor) {
+  return withTransaction(async (client) => {
+    const current = (await client.query("SELECT * FROM contacts WHERE id = $1", [id])).rows[0];
+    if (!current) throw new HttpError(404, `No existe el contacto ${id}`);
+
+    const { rows } = await client.query(
+      `UPDATE contacts SET name = $2, email = $3, phone = $4, active = $5 WHERE id = $1
+       RETURNING id, name, email, phone, active`,
+      [
+        id,
+        input.name ?? current.name,
+        pick(input, "email", current.email),
+        normalizePhone(pick(input, "phone", current.phone)),
+        input.active ?? current.active,
+      ]
+    );
+    await audit(client, actor, "update", "contact", id, { before: current, after: rows[0] });
+    return rows[0];
+  });
+}
+
+/** Un contacto asignado no se borra (se desactiva con active=false): quedaría una asignación apuntando a nadie. */
+export function deleteContact(id, actor) {
+  return withTransaction(async (client) => {
+    const used = (await client.query("SELECT count(*)::int AS n FROM escalation_raci WHERE contact_id = $1", [id])).rows[0].n;
+    if (used > 0) throw new HttpError(409, `El contacto tiene ${asignaciones(used)}: quítalo de ellas o desactívalo en vez de borrarlo`);
+    const { rows } = await client.query("DELETE FROM contacts WHERE id = $1 RETURNING *", [id]);
+    if (!rows[0]) throw new HttpError(404, `No existe el contacto ${id}`);
+    await audit(client, actor, "delete", "contact", id, rows[0]);
+    return { deleted: id };
+  });
+}
+
+/** Un país con equipos, sondas, dispositivos o asignaciones no se borra. */
+export function deleteCountry(isoCode, actor) {
+  return withTransaction(async (client) => {
+    const country = (await client.query("SELECT id, iso_code, name FROM countries WHERE iso_code = $1", [isoCode.toUpperCase()])).rows[0];
+    if (!country) throw new HttpError(404, `El país "${isoCode}" no existe`);
+
+    const { rows } = await client.query(
+      `SELECT (SELECT count(*)::int FROM teams WHERE country_id = $1) AS teams,
+              (SELECT count(*)::int FROM escalation_raci WHERE country_id = $1) AS assignments,
+              (SELECT count(*)::int FROM opmanager_probes WHERE country_id = $1) AS probes,
+              (SELECT count(*)::int FROM devices WHERE country_id = $1) AS devices`,
+      [country.id]
+    );
+    const inUse = Object.entries(rows[0]).filter(([, count]) => count > 0);
+    if (inUse.length) {
+      throw new HttpError(409, `El país está en uso (${inUse.map(([what, count]) => `${count} ${what}`).join(", ")}): no se puede borrar`);
+    }
+    await client.query("DELETE FROM countries WHERE id = $1", [country.id]);
+    await audit(client, actor, "delete", "country", country.id, country);
+    return { deleted: country.iso_code };
+  });
+}
+
+/** Un nivel con asignaciones no se borra. */
+export function deleteLevel(levelNumber, actor) {
+  return withTransaction(async (client) => {
+    const level = (await client.query("SELECT id, level_number, name FROM escalation_levels WHERE level_number = $1", [levelNumber])).rows[0];
+    if (!level) throw new HttpError(404, `El nivel ${levelNumber} no existe`);
+    const used = (await client.query("SELECT count(*)::int AS n FROM escalation_raci WHERE escalation_level_id = $1", [level.id])).rows[0].n;
+    if (used > 0) throw new HttpError(409, `El nivel tiene ${asignaciones(used)}: no se puede borrar`);
+    await client.query("DELETE FROM escalation_levels WHERE id = $1", [level.id]);
+    await audit(client, actor, "delete", "level", level.id, level);
+    return { deleted: levelNumber };
   });
 }

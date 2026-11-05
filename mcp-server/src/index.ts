@@ -2,7 +2,8 @@ import express from "express";
 import { registerRoutes } from "./routes/index.js";
 
 const app = express();
-app.use(express.json());
+// 5 MB: la importación masiva de la matriz RACI manda miles de filas en un solo JSON (el límite por omisión es 100 KB).
+app.use(express.json({ limit: "5mb" }));
 
 registerRoutes(app);
 
